@@ -1,0 +1,90 @@
+> docnote_extract
+description: 'The build-time companion package to docnote'
+<
+
+
+> Thoughts: code samples for ``docnote_extract_testpkg``
+    Maybe I could pilfer something from typeshed?
+
+    Hmmm, no, those are too polished. But I could maybe write a custom
+    tool that constructs fake repos based on real ones, preserving the
+    original code but omitting the bodies.
+
+    If you go that route, you'll probably want to add in multiple
+    python libraries as subpackages, so that you can get a variety of
+    code styles and stuff.
+
+    You'd also need something that included ``docnote`` stuff. Which would
+    imply one of your own repos. ``finnr``?
+
+
+> Thoughts: docnote_extract
+    Very first thing:
+    ++  set ``typing.TYPE_CHECKING`` to true
+    ++  install the importhook
+
+    I think I just want this to build a document tree. Not even have any
+    templates for cleancopy generation, literally just build the document
+    tree. except it also needs to have a dependency tree, I suppose...
+    ++  figure out all of the modules in the package to extract, public or
+        private, doesn't matter
+        ++  first import all of them, traversing down into subpackages
+        ++  for every import, create a stringified proxy version of that
+            object, which captures the name of the module it's imported in
+            and the name of the object in that module (note that this might
+            be different from the name within the module-being-processed,
+            since it might be imported ``as`` something
+        ++  then, iterate over the module's entire ``__dict__`` (don't forget
+            to get type hints on it, and don't forget ``include_extras``).
+            for every value there:
+            ++  check to see if it was defined within that module, or for
+                an ``include_in_docs`` override, or if it's in ``__all__``
+            ++  if any of the above, include it in the "this is a member of
+                this module" set
+        ++  make sure you're holding on to the result of ``get_type_hints``
+            and that it's preserving all of your proxy versions of everything
+            that the module imports
+    ++  preserve a stringified version of the globals of every module within
+        the resulting module summary object; this will help you automatically
+        link any ``code fenced`` objects based on the actual names in the
+        namespace, instead of needing a special linking syntax
+    ++  once you've done that with every single module, start to fixup any
+        intra-package references, replacing proxies to things that are defined
+        with links and/or references to the actual object
+    ++  your end goal is a tree of every module and submodule, along with
+        all of the names in that module that should be included in the docs,
+        and every piece of documentation associated with each of those names
+
+    Other thoughts:
+    ++  need to always merge the runtime situation (``__dir__``, inspect, etc)
+        vs the type hints
+    ++  will probably want to have something detecting class, function, coro,
+        variable, etc
+        ++  each of these should probably have its own node type in the
+            final tree
+
+
+> Thoughts: docs generation package
+    then, cleandocs can be responsible for all the rest.
+
+    side note, maybe another name?
+    ++  the problem is I want it clearer that it can be used not just for
+        docs, but also eg static site generation
+    ++  cleancopy_docsgen -- still too doxy
+        
+    anyways, the idea would be:
+    ++  use templatey to generate temporary (maybe purely inmemory) cleancopy
+        docs, as a peer for the hand-written static/companion docs
+    ++  parse those using cleancopy, along with all static/companion docs,
+        into a docset
+    ++  have an AST transforming function that converts that into a template
+        instance tree, which can be inserted anywhere into a parent template
+        ++  the biggest question here is navigation
+        ++  I think probably you should have a sequence of ``Page`` objects,
+            and each page object is a container, NOT a template instance
+        ++  local navigation would be built based on the list of all of the
+            pages, so that would be orthogonal, you just need to make sure
+            you have the actual page objects. so that makes sense
+        ++  you'd need to have a ``make_link`` env function, so that the
+            template hyperlinks work
+
