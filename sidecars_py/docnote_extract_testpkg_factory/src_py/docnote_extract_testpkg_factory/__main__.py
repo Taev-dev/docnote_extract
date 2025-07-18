@@ -1,3 +1,7 @@
+"""This does a bunch of incredibly fragile regex magic to strip out the
+bodies of functions. We use it strictly for generating realistic (as
+in, real-world-esque!) code for the test package.
+"""
 from __future__ import annotations
 
 import contextlib
@@ -14,6 +18,7 @@ from itertools import chain
 from pathlib import Path
 from pprint import pformat
 from typing import IO
+from typing import Literal
 from zipfile import ZipFile
 from zipfile import ZipInfo
 
@@ -238,6 +243,87 @@ def download_zipped_repo(src_spec: PkgSrcSpec, dest_zip_path: Path) -> bool:
     return True
 
 
+@dataclass(slots=True)
+class _TripleQuoteState:
+    tq_single_count: int = 0
+    tq_double_count: int = 0
+
+    def advance(self, line: str) -> str:
+        """Note: line must be after stripping comments.
+        Returns whatever part of the line is left that wasn't inside a
+        triple-quoted string.
+        """
+        first_quote_type = self.get_first_triple_quote_type(line)
+        # No quotes, so it's all or nothing
+        if first_quote_type == 0:
+            if self.in_tq_string:
+                return ''
+            else:
+                return line
+
+        # For the rest, there's a partially-unquoted line that we need to
+        # extract (and we need to update the count totals)
+        if first_quote_type == 1:
+            before, _, after = line.partition("'''")
+            # Note that we already checked to make sure we're not inside a
+            # triple-quoted string already (in get_first_tq...)
+            self.tq_single_count += 1
+
+        else:
+            before, _, after = line.partition('"""')
+            # Note that we already checked to make sure we're not inside a
+            # triple-quoted string already (in get_first_tq...)
+            self.tq_double_count += 1
+
+        if self.in_tq_string:
+            return before
+        else:
+            return after
+
+    def get_first_triple_quote_type(
+            self,
+            line: str
+            ) -> Literal[0] | Literal[1] | Literal[2]:
+        """For the passed line:
+        ++  Returns 0 if there is no triple-quoted string.
+        ++  Returns 1 if the first triple-quoted string uses single
+            quotes.
+        ++  Returns 2 if the first triple-quoted string uses double
+            quotes.
+        """
+        if '"""' in line:
+            double_index = line.index('"""')
+        else:
+            double_index = float('inf')
+
+        if "'''" in line:
+            single_index = line.index("'''")
+        else:
+            single_index = float('inf')
+
+        if double_index == single_index == float('inf'):
+            return 0
+
+        # Note that we need to make sure we aren't inside a tq-string first!
+        if self.tq_single_count % 2 == 0 and double_index < single_index:
+            return 2
+        elif self.tq_single_count % 2 != 0 and single_index != float('inf'):
+            return 1
+        elif self.tq_double_count % 2 == 0 and single_index < double_index:
+            return 1
+        elif self.tq_double_count % 2 != 0 and double_index != float('inf'):
+            return 2
+
+        return 0
+
+    @property
+    def in_tq_string(self) -> bool:
+        """This is more of a heuristic than anything smart."""
+        return (
+            self.tq_single_count % 2 != 0
+            or self.tq_double_count % 2 != 0)
+
+
 def unpack_and_stubbify(
         src_spec: PkgSrcSpec,
         src_file: IO[str],
@@ -246,6 +332,7 @@ def unpack_and_stubbify(
     they originally were. We strip all comments and drop function bodies
     (except docstrings via a heuristic).
     """
+    tq_state = _TripleQuoteState()
     func_state: _FuncDefState | None = None
     with dest_path.open('wt', encoding='utf-8') as dest_fd:
         dest_fd.write(_STUB_DISCLAIMER.format(
@@ -255,13 +342,14 @@ def unpack_and_stubbify(
         # finished processing a function def/body/etc.
         dummy_text = 'if None: pass'
         for line in chain(src_file, [dummy_text]):
-            sanitized_line, _, _ = line.partition('#')
+            costripped_line, _, _ = line.partition('#')
             # Normalize the newline away so it doesn't matter if there was a
             # comment or not
-            sanitized_line = sanitized_line.rstrip('\n')
-            if not sanitized_line:
+            costripped_line = costripped_line.rstrip('\n')
+            if not costripped_line.strip():
                 continue
 
+            sanitized_line = tq_state.advance(costripped_line)
             # This is confusing, but: if we detect dedentation, OR the start
             # of a new function, we need to backtrack to re-process the current
             # line.
@@ -274,18 +362,18 @@ def unpack_and_stubbify(
                     # because there was no function; otherwise, we do still
                     # need to process it.
                     if func_state is None:
-                        next_output = sanitized_line
+                        next_output = costripped_line
                         line_processed = True
 
                 else:
                     next_output, still_funky = func_state.advance(
-                        sanitized_line)
+                        costripped_line, sanitized_line)
 
                     if still_funky:
                         line_processed = True
                     # This means that it was a single-line, empty function.
                     # If we backtrack, we'll get stuck in an infinite loop.
-                    elif next_output == sanitized_line:
+                    elif next_output == costripped_line:
                         func_state = None
                         line_processed = True
                     else:
@@ -303,6 +391,12 @@ def unpack_and_stubbify(
                 # normalized away
                 dest_fd.write(f'{next_output}\n')
 
+            # if len(dest_path.parts) >= 2 and dest_path.parts[-2:] == ('docnote', '__init__.py'):
+            #     print('--- state at end of loop')
+            #     print(f'    {sanitized_line=}')
+            #     print(f'    {func_state=}')
+            #     print(f'    {next_output=}')
+
 
 @dataclass(slots=True, kw_only=True)
 class _FuncDefState:
@@ -316,17 +410,21 @@ class _FuncDefState:
     def_close_paren_count: int = 0
     docstring_quotes: str | None = None
 
-    def advance(self, line: str) -> tuple[str, bool]:  # noqa: C901, PLR0911, PLR0912
+    def advance(  # noqa: C901, PLR0911, PLR0912
+            self,
+            costripped_line: str,
+            sanitized_line: str
+            ) -> tuple[str, bool]:
         """Quick and dirty state machine for figuring out function defs.
         This isn't a greaaaat use of our time, so we're doing this as
         simply as possible, and not being super strict on typing.
         """
-        if _pattern_empty_line.match(line):
-            return '', True
+        if _pattern_empty_line.match(sanitized_line):
+            return costripped_line, True
 
         if self.in_func_def:
-            self.def_open_paren_count += line.count('(')
-            self.def_close_paren_count += line.count(')')
+            self.def_open_paren_count += sanitized_line.count('(')
+            self.def_close_paren_count += sanitized_line.count(')')
 
             if (
                 self.def_open_paren_count
@@ -334,20 +432,20 @@ class _FuncDefState:
             ):
                 self.in_func_def = False
 
-                if _pattern_empty_func.search(line):
-                    return line, False
+                if _pattern_empty_func.search(sanitized_line):
+                    return costripped_line, False
 
                 else:
                     self.in_post_func_def = True
-                    return line, True
+                    return costripped_line, True
 
             else:
-                return line, True
+                return costripped_line, True
 
         elif self.in_post_func_def:
             # Just to be clear, this means we found a docstring for the
             # function, and we need to transition into the in_docstring state
-            if (match := _pattern_docstring_start.match(line)):
+            if (match := _pattern_docstring_start.match(costripped_line)):
                 indentation = match.group('indentation')
                 self.indent_level_inside = len(indentation) // 4
                 self.docstring_quotes = match.group('quotes')
@@ -355,12 +453,14 @@ class _FuncDefState:
                 self.in_func_docstring = True
                 # No recursion needed; we found a docstring, so by definition,
                 # we can't possibly be ending the function on this line.
-                return line, True
+                return costripped_line, True
 
             # Again, for clarity: this means we DIDN'T find a docstring, and
             # we need to transition to the in_func_body state, and then
             # reprocess the line with that state applied.
-            elif (match := _pattern_nonempty_indentation.match(line)):
+            elif (
+                match := _pattern_nonempty_indentation.match(costripped_line)
+            ):
                 indentation = match.group('indentation')
                 self.indent_level_inside = len(indentation) // 4
                 self.in_post_func_def = False
@@ -368,22 +468,22 @@ class _FuncDefState:
                 self.in_func_body = True
                 # Recursion is how we're re-processing the line with the
                 # advanced state. It's a little awkward, but it works.
-                return self.advance(line)
+                return self.advance(costripped_line, sanitized_line)
 
             else:
                 raise RuntimeError(
                     'impossible branch: unknown post def state!')
 
         elif self.in_func_docstring:
-            if (match := _pattern_docstring_end.search(line)):
+            if (match := _pattern_docstring_end.search(costripped_line)):
                 if match.group('quotes') == self.docstring_quotes:
                     self.in_func_docstring = False
                     self.in_func_body = True
 
-            return line, True
+            return costripped_line, True
 
         elif self.in_func_body:
-            if (match := _pattern_nonempty_indentation.match(line)):
+            if (match := _pattern_nonempty_indentation.match(sanitized_line)):
                 indentation = match.group('indentation')
                 indent_level = len(indentation) // 4
 
@@ -404,8 +504,8 @@ class _FuncDefState:
             raise RuntimeError('impossible branch: unknown func def state!')
 
     @classmethod
-    def detect_function(cls, line_pre_comment: str) -> _FuncDefState | None:
-        if (match := _pattern_def_start.match(line_pre_comment)):
+    def detect_function(cls, sanitized_line: str) -> _FuncDefState | None:
+        if (match := _pattern_def_start.match(sanitized_line)):
             pre_func_indent = match.group('indentation')
             return cls(indent_level_before=len(pre_func_indent) // 4)
 
