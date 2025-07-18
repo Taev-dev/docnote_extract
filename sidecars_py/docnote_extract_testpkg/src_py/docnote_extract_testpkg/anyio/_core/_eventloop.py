@@ -1,0 +1,108 @@
+"""This is a programmatically-vendored code sample
+that has been stubbified (ie, function bodies removed). Do not modify
+it directly; your changes will just be overwritten.
+
+The original source is:
+PkgSrcSpec(forge='github',
+           repo_id='agronholm/anyio',
+           pkg_name='anyio',
+           offset_dest_root_dir=None,
+           root_path='src/anyio',
+           commit_hash='65fe287039e2ded48752e1111a82c29d07725e36',
+           license_paths={'LICENSE'})
+
+The license of the original project is included in the top level of
+the vendored project directory.
+
+To regenerate, see sidecars/docnote_extract_testpkg_factory. The
+command is:
+``uv run python -m docnote_extract_testpkg_factory``.
+
+"""
+from __future__ import annotations
+import math
+import sys
+import threading
+from collections.abc import Awaitable, Callable, Generator
+from contextlib import contextmanager
+from importlib import import_module
+from typing import TYPE_CHECKING, Any, TypeVar
+import sniffio
+if sys.version_info >= (3, 11):
+    from typing import TypeVarTuple, Unpack
+else:
+    from typing_extensions import TypeVarTuple, Unpack
+if TYPE_CHECKING:
+    from ..abc import AsyncBackend
+BACKENDS = "asyncio", "trio"
+T_Retval = TypeVar("T_Retval")
+PosArgsT = TypeVarTuple("PosArgsT")
+threadlocals = threading.local()
+loaded_backends: dict[str, type[AsyncBackend]] = {}
+def run(
+    func: Callable[[Unpack[PosArgsT]], Awaitable[T_Retval]],
+    *args: Unpack[PosArgsT],
+    backend: str = "asyncio",
+    backend_options: dict[str, Any] | None = None,
+) -> T_Retval:
+    """
+    Run the given coroutine function in an asynchronous event loop.
+    The current thread must not be already running an event loop.
+    :param func: a coroutine function
+    :param args: positional arguments to ``func``
+    :param backend: name of the asynchronous event loop implementation – currently
+        either ``asyncio`` or ``trio``
+    :param backend_options: keyword arguments to call the backend ``run()``
+        implementation with (documented :ref:`here <backend options>`)
+    :return: the return value of the coroutine function
+    :raises RuntimeError: if an asynchronous event loop is already running in this
+        thread
+    :raises LookupError: if the named backend is not found
+    """
+    ...
+
+async def sleep(delay: float) -> None:
+    """
+    Pause the current task for the specified duration.
+    :param delay: the duration, in seconds
+    """
+    return await get_async_backend().sleep(delay)
+async def sleep_forever() -> None:
+    """
+    Pause the current task until it's cancelled.
+    This is a shortcut for ``sleep(math.inf)``.
+    .. versionadded:: 3.1
+    """
+    await sleep(math.inf)
+async def sleep_until(deadline: float) -> None:
+    """
+    Pause the current task until the given time.
+    :param deadline: the absolute time to wake up at (according to the internal
+        monotonic clock of the event loop)
+    .. versionadded:: 3.1
+    """
+    now = current_time()
+    await sleep(max(deadline - now, 0))
+def current_time() -> float:
+    """
+    Return the current value of the event loop's internal clock.
+    :return: the clock value (seconds)
+    """
+    ...
+
+def get_all_backends() -> tuple[str, ...]:
+    """Return a tuple of the names of all built-in backends."""
+    return BACKENDS
+def get_cancelled_exc_class() -> type[BaseException]:
+    """Return the current async library's cancellation exception class."""
+    ...
+
+@contextmanager
+def claim_worker_thread(
+    backend_class: type[AsyncBackend], token: object
+) -> Generator[Any, None, None]:
+    ...
+
+def get_async_backend(asynclib_name: str | None = None) -> type[AsyncBackend]:
+    ...
+
