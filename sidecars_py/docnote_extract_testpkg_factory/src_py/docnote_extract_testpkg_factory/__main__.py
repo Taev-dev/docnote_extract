@@ -8,6 +8,7 @@ import contextlib
 import json
 import re
 import tempfile
+import textwrap
 import time
 from collections.abc import Iterable
 from dataclasses import asdict as dc_asdict
@@ -41,7 +42,7 @@ _pattern_docstring_end = re.compile(r'(?P<quotes>"""|\'\'\')\s*$')
 _pattern_empty_line = re.compile(r'^\s*$')
 _pattern_empty_func = re.compile(r':\s*(\.\.\.|pass)\s*$')
 
-_STUB_DISCLAIMER = '''"""This is a programmatically-vendored code sample
+_STUB_DISCLAIMER = '''This is a programmatically-vendored code sample
 that has been stubbified (ie, function bodies removed). Do not modify
 it directly; your changes will just be overwritten.
 
@@ -55,7 +56,6 @@ To regenerate, see sidecars/docnote_extract_testpkg_factory. The
 command is:
 ``uv run python -m docnote_extract_testpkg_factory``.
 
-"""
 '''
 
 
@@ -335,8 +335,10 @@ def unpack_and_stubbify(
     tq_state = _TripleQuoteState()
     func_state: _FuncDefState | None = None
     with dest_path.open('wt', encoding='utf-8') as dest_fd:
-        dest_fd.write(_STUB_DISCLAIMER.format(
-            src_spec=pformat(src_spec, indent=4)))
+        dest_fd.write(
+            textwrap.indent(
+                _STUB_DISCLAIMER.format(src_spec=pformat(src_spec, indent=4)),
+                prefix='# '))
         # We add one last closing line (which we detect and drop) as a marker
         # for the end of the file, since we otherwise might not yet have
         # finished processing a function def/body/etc.
@@ -390,12 +392,6 @@ def unpack_and_stubbify(
                 # Note that we need to recover the newline we
                 # normalized away
                 dest_fd.write(f'{next_output}\n')
-
-            # if len(dest_path.parts) >= 2 and dest_path.parts[-2:] == ('docnote', '__init__.py'):
-            #     print('--- state at end of loop')
-            #     print(f'    {sanitized_line=}')
-            #     print(f'    {func_state=}')
-            #     print(f'    {next_output=}')
 
 
 @dataclass(slots=True, kw_only=True)
