@@ -48,18 +48,25 @@ class CancelScope:
     @property
     def deadline(self) -> float:
         """
-        ...
-
+        """
+        raise NotImplementedError
     @deadline.setter
     def deadline(self, value: float) -> None:
-        ...
-
+        raise NotImplementedError
     @property
     def cancel_called(self) -> bool:
+        ...
+
         """``True`` if :meth:`cancel` has been called."""
         raise NotImplementedError
     @property
     def cancelled_caught(self) -> bool:
+        """
+        ``True`` if this scope suppressed a cancellation exception it itself raised.
+        This is typically used to check if any work was interrupted, or to see if the
+        scope was cancelled due to its deadline being reached. The value will, however,
+        only be ``True`` if the cancellation was triggered by the scope itself (and not
+        an outer scope).
         """
         ...
 

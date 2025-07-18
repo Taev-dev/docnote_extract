@@ -30,12 +30,9 @@ import typing
 import zlib
 from ._exceptions import DecodingError
 try:
-    
     import brotli
 except ImportError:  
     try:
-        
-        
         import brotlicffi as brotli
     except ImportError:
         brotli = None
@@ -111,7 +108,6 @@ class ZStandardDecoder(ContentDecoder):
     Requires `pip install zstandard`.
     Can be installed as a dependency of httpx using `pip install httpx[zstd]`.
     """
-    
     def __init__(self) -> None:
         ...
 

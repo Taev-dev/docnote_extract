@@ -63,28 +63,15 @@ _PCTRTT: TypeAlias = tuple[tuple[str, str], ...]
 _PCTRTTT: TypeAlias = tuple[_PCTRTT, ...]
 class TLSAttribute(TypedAttributeSet):
     """Contains Transport Layer Security related attributes."""
-    
     alpn_protocol: str | None = typed_attribute()
-    
     channel_binding_tls_unique: bytes = typed_attribute()
-    
     cipher: tuple[str, str, int] = typed_attribute()
-    
-    
     peer_certificate: None | (dict[str, str | _PCTRTTT | _PCTRTT]) = typed_attribute()
-    
     peer_certificate_binary: bytes | None = typed_attribute()
-    
     server_side: bool = typed_attribute()
-    
-    
     shared_ciphers: list[tuple[str, str, int]] | None = typed_attribute()
-    
     ssl_object: ssl.SSLObject = typed_attribute()
-    
-    
     standard_compatible: bool = typed_attribute()
-    
     tls_version: str = typed_attribute()
 @dataclass(eq=False)
 class TLSStream(ByteStream):
@@ -129,17 +116,13 @@ class TLSStream(ByteStream):
             server_side = not hostname
         if not ssl_context:
             purpose = (
-                ...
-
+                ssl.Purpose.CLIENT_AUTH if server_side else ssl.Purpose.SERVER_AUTH
             )
             ssl_context = ssl.create_default_context(purpose)
-            
             if hasattr(ssl, "OP_IGNORE_UNEXPECTED_EOF"):
                 ssl_context.options &= ~ssl.OP_IGNORE_UNEXPECTED_EOF
         bio_in = ssl.MemoryBIO()
         bio_out = ssl.MemoryBIO()
-        
-        
         if type(ssl_context) is ssl.SSLContext:
             ssl_object = ssl_context.wrap_bio(
                 bio_in, bio_out, server_side=server_side, server_hostname=hostname
@@ -170,7 +153,6 @@ class TLSStream(ByteStream):
                 result = func(*args)
             except ssl.SSLWantReadError:
                 try:
-                    
                     if self._write_bio.pending:
                         await self.transport_stream.send(self._write_bio.read())
                     data = await self.transport_stream.receive()
@@ -200,7 +182,6 @@ class TLSStream(ByteStream):
                         raise EndOfStream from None
                 raise
             else:
-                
                 if self._write_bio.pending:
                     await self.transport_stream.send(self._write_bio.read())
                 return result
@@ -243,8 +224,25 @@ class TLSStream(ByteStream):
         )
     @property
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
-        ...
-
+        return {
+            **self.transport_stream.extra_attributes,
+            TLSAttribute.alpn_protocol: self._ssl_object.selected_alpn_protocol,
+            TLSAttribute.channel_binding_tls_unique: (
+                self._ssl_object.get_channel_binding
+            ),
+            TLSAttribute.cipher: self._ssl_object.cipher,
+            TLSAttribute.peer_certificate: lambda: self._ssl_object.getpeercert(False),
+            TLSAttribute.peer_certificate_binary: lambda: self._ssl_object.getpeercert(
+                True
+            ),
+            TLSAttribute.server_side: lambda: self._ssl_object.server_side,
+            TLSAttribute.shared_ciphers: lambda: self._ssl_object.shared_ciphers()
+            if self._ssl_object.server_side
+            else None,
+            TLSAttribute.standard_compatible: lambda: self.standard_compatible,
+            TLSAttribute.ssl_object: lambda: self._ssl_object,
+            TLSAttribute.tls_version: self._ssl_object.version,
+        }
 @dataclass(eq=False)
 class TLSListener(Listener[TLSStream]):
     """
@@ -269,24 +267,15 @@ class TLSListener(Listener[TLSStream]):
         """
         Handle an exception raised during the TLS handshake.
         This method does 3 things:
-        
-        
            ``anyio.streams.tls`` logger
-        
         :param exc: the exception
         :param stream: the original stream
         """
         await aclose_forcefully(stream)
-        
         if not isinstance(exc, get_cancelled_exc_class()):
-            
-            
-            
-            
             logging.getLogger(__name__).exception(
                 "Error during TLS handshake", exc_info=exc
             )
-        
         if not isinstance(exc, Exception) or isinstance(exc, get_cancelled_exc_class()):
             raise
     async def serve(
@@ -313,15 +302,17 @@ class TLSListener(Listener[TLSStream]):
         await self.listener.aclose()
     @property
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
-        ...
-
+        return {
+            TLSAttribute.standard_compatible: lambda: self.standard_compatible,
+        }
 class TLSConnectable(ByteStreamConnectable):
     """
     Wraps another connectable and does TLS negotiation after a successful connection.
     :param connectable: the connectable to wrap
     :param hostname: host name of the server (if host name checking is desired)
     :param ssl_context: the SSLContext object to use (if not provided, a secure default
-        will be created)
+        ...
+
     :param standard_compatible: if ``False``, skip the closing handshake when closing
         the connection, and don't raise an exception if the server does the same
     """
@@ -333,8 +324,17 @@ class TLSConnectable(ByteStreamConnectable):
         ssl_context: ssl.SSLContext | None = None,
         standard_compatible: bool = True,
     ) -> None:
-        ...
-
+        self.connectable = connectable
+        self.ssl_context: SSLContext = ssl_context or ssl.create_default_context(
+            ssl.Purpose.SERVER_AUTH
+        )
+        if not isinstance(self.ssl_context, ssl.SSLContext):
+            raise TypeError(
+                "ssl_context must be an instance of ssl.SSLContext, not "
+                f"{type(self.ssl_context).__name__}"
+            )
+        self.hostname = hostname
+        self.standard_compatible = standard_compatible
     @override
     async def connect(self) -> TLSStream:
         stream = await self.connectable.connect()

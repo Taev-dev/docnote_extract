@@ -96,15 +96,8 @@ class _BlockingAsyncContextManager(Generic[T_co], AbstractContextManager):
         else:
             self._enter_future.set_result(value)
         try:
-            
-            
-            
-            
             await self._exit_event.wait()
         finally:
-            
-            
-            
             result = await self._async_cm.__aexit__(*self._exit_exc_info)
         return result
     def __enter__(self) -> T_co:
@@ -128,11 +121,12 @@ class _BlockingPortalTaskStatus(TaskStatus):
 class BlockingPortal:
     """An object that lets external threads run code in an asynchronous event loop."""
     def __new__(cls) -> BlockingPortal:
-        ...
-
+        return get_async_backend().create_blocking_portal()
     def __init__(self) -> None:
-        ...
-
+        self._event_loop_thread_id: int | None = get_ident()
+        self._stop_event = Event()
+        self._task_group = create_task_group()
+        self._cancelled_exc_class = get_cancelled_exc_class()
     async def __aenter__(self) -> BlockingPortal:
         await self._task_group.__aenter__()
         return self
@@ -145,8 +139,12 @@ class BlockingPortal:
         await self.stop()
         return await self._task_group.__aexit__(exc_type, exc_val, exc_tb)
     def _check_running(self) -> None:
-        ...
-
+        if self._event_loop_thread_id is None:
+            raise RuntimeError("This portal is not running")
+        if self._event_loop_thread_id == get_ident():
+            raise RuntimeError(
+                "This method cannot be called from the event loop thread"
+            )
     async def sleep_until_stopped(self) -> None:
         """Sleep until :meth:`stop` is called."""
         await self._stop_event.wait()
@@ -189,7 +187,6 @@ class BlockingPortal:
         except BaseException as exc:
             if not future.cancelled():
                 future.set_exception(exc)
-            
             if not isinstance(exc, Exception):
                 raise
         else:

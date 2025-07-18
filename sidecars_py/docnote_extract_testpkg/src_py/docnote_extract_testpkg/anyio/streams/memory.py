@@ -39,13 +39,10 @@ T_co = TypeVar("T_co", covariant=True)
 T_contra = TypeVar("T_contra", contravariant=True)
 class MemoryObjectStreamStatistics(NamedTuple):
     current_buffer_used: int  
-    
     max_buffer_size: float
     open_send_streams: int  
     open_receive_streams: int  
-    
     tasks_waiting_send: int
-    
     tasks_waiting_receive: int
 @dataclass(eq=False)
 class MemoryObjectItemReceiver(Generic[T_Item]):
@@ -93,7 +90,6 @@ class MemoryObjectReceiveStream(Generic[T_co], ObjectReceiveStream[T_co]):
         try:
             return self.receive_nowait()
         except WouldBlock:
-            
             receive_event = Event()
             receiver = MemoryObjectItemReceiver[T_co]()
             self._state.waiting_receivers[receive_event] = receiver
@@ -178,7 +174,6 @@ class MemoryObjectSendStream(Generic[T_contra], ObjectSendStream[T_contra]):
         try:
             self.send_nowait(item)
         except WouldBlock:
-            
             send_event = Event()
             self._state.waiting_senders[send_event] = item
             try:

@@ -86,8 +86,7 @@ class Event:
         raise NotImplementedError
     def is_set(self) -> bool:
         """Return ``True`` if the flag is set, ``False`` if not."""
-        ...
-
+        raise NotImplementedError
     async def wait(self) -> None:
         """
         Wait until the flag has been set.
@@ -156,27 +155,26 @@ class Lock:
         raise NotImplementedError
     def locked(self) -> bool:
         """Return True if the lock is currently held."""
-        ...
-
+        raise NotImplementedError
     def statistics(self) -> LockStatistics:
         """
         Return statistics about the current state of this lock.
         .. versionadded:: 3.0
         """
-        ...
-
+        raise NotImplementedError
 class LockAdapter(Lock):
     _internal_lock: Lock | None = None
     def __new__(cls, *, fast_acquire: bool = False) -> LockAdapter:
-        ...
-
+        return object.__new__(cls)
     def __init__(self, *, fast_acquire: bool = False):
-        ...
-
+        self._fast_acquire = fast_acquire
     @property
     def _lock(self) -> Lock:
-        ...
-
+        if self._internal_lock is None:
+            self._internal_lock = get_async_backend().create_lock(
+                fast_acquire=self._fast_acquire
+            )
+        return self._internal_lock
     async def __aenter__(self) -> None:
         await self._lock.acquire()
     async def __aexit__(
@@ -195,27 +193,25 @@ class LockAdapter(Lock):
         Acquire the lock, without blocking.
         :raises ~anyio.WouldBlock: if the operation would block
         """
-        ...
-
+        self._lock.acquire_nowait()
     def release(self) -> None:
         """Release the lock."""
-        self._lock.release()
+        ...
+
     def locked(self) -> bool:
         """Return True if the lock is currently held."""
-        ...
-
+        return self._lock.locked()
     def statistics(self) -> LockStatistics:
         """
-        Return statistics about the current state of this lock.
-        .. versionadded:: 3.0
         """
-        ...
-
+        if self._internal_lock is None:
+            return LockStatistics(False, None, 0)
+        return self._internal_lock.statistics()
 class Condition:
     _owner_task: TaskInfo | None = None
     def __init__(self, lock: Lock | None = None):
-        ...
-
+        self._lock = lock or Lock()
+        self._waiters: deque[Event] = deque()
     async def __aenter__(self) -> None:
         await self.acquire()
     async def __aexit__(
@@ -226,9 +222,11 @@ class Condition:
     ) -> None:
         self.release()
     def _check_acquired(self) -> None:
+        if self._owner_task != get_current_task():
+            raise RuntimeError("The current task is not holding the underlying lock")
+    async def acquire(self) -> None:
         ...
 
-    async def acquire(self) -> None:
         """Acquire the underlying lock."""
         await self._lock.acquire()
         self._owner_task = get_current_task()
@@ -244,8 +242,7 @@ class Condition:
         self._lock.release()
     def locked(self) -> bool:
         """Return True if the lock is set."""
-        ...
-
+        return self._lock.locked()
     def notify(self, n: int = 1) -> None:
         """Notify exactly n listeners."""
         self._check_acquired()
@@ -279,8 +276,7 @@ class Condition:
         Return statistics about the current state of this condition.
         .. versionadded:: 3.0
         """
-        ...
-
+        return ConditionStatistics(len(self._waiters), self._lock.statistics())
 class Semaphore:
     def __new__(
         cls,
@@ -289,8 +285,12 @@ class Semaphore:
         max_value: int | None = None,
         fast_acquire: bool = False,
     ) -> Semaphore:
-        ...
-
+        try:
+            return get_async_backend().create_semaphore(
+                initial_value, max_value=max_value, fast_acquire=fast_acquire
+            )
+        except AsyncLibraryNotFoundError:
+            return SemaphoreAdapter(initial_value, max_value=max_value)
     def __init__(
         self,
         initial_value: int,
@@ -298,8 +298,18 @@ class Semaphore:
         max_value: int | None = None,
         fast_acquire: bool = False,
     ):
-        ...
-
+        if not isinstance(initial_value, int):
+            raise TypeError("initial_value must be an integer")
+        if initial_value < 0:
+            raise ValueError("initial_value must be >= 0")
+        if max_value is not None:
+            if not isinstance(max_value, int):
+                raise TypeError("max_value must be an integer or None")
+            if max_value < initial_value:
+                raise ValueError(
+                    "max_value must be equal to or higher than initial_value"
+                )
+        self._fast_acquire = fast_acquire
     async def __aenter__(self) -> Semaphore:
         await self.acquire()
         return self
@@ -326,16 +336,17 @@ class Semaphore:
     @property
     def value(self) -> int:
         """The current value of the semaphore."""
-        ...
-
+        raise NotImplementedError
     @property
     def max_value(self) -> int | None:
         """The maximum value of the semaphore."""
         raise NotImplementedError
     def statistics(self) -> SemaphoreStatistics:
         """
-        ...
-
+        Return statistics about the current state of this semaphore.
+        .. versionadded:: 3.0
+        """
+        raise NotImplementedError
 class SemaphoreAdapter(Semaphore):
     _internal_semaphore: Semaphore | None = None
     def __new__(
@@ -345,8 +356,7 @@ class SemaphoreAdapter(Semaphore):
         max_value: int | None = None,
         fast_acquire: bool = False,
     ) -> SemaphoreAdapter:
-        ...
-
+        return object.__new__(cls)
     def __init__(
         self,
         initial_value: int,
@@ -354,35 +364,40 @@ class SemaphoreAdapter(Semaphore):
         max_value: int | None = None,
         fast_acquire: bool = False,
     ) -> None:
-        ...
-
+        super().__init__(initial_value, max_value=max_value, fast_acquire=fast_acquire)
+        self._initial_value = initial_value
+        self._max_value = max_value
     @property
     def _semaphore(self) -> Semaphore:
-        ...
-
+        if self._internal_semaphore is None:
+            self._internal_semaphore = get_async_backend().create_semaphore(
+                self._initial_value, max_value=self._max_value
+            )
+        return self._internal_semaphore
     async def acquire(self) -> None:
         await self._semaphore.acquire()
     def acquire_nowait(self) -> None:
-        ...
-
+        self._semaphore.acquire_nowait()
     def release(self) -> None:
-        ...
-
+        self._semaphore.release()
     @property
     def value(self) -> int:
-        ...
-
+        if self._internal_semaphore is None:
+            return self._initial_value
+        return self._semaphore.value
     @property
     def max_value(self) -> int | None:
-        ...
-
+        return self._max_value
     def statistics(self) -> SemaphoreStatistics:
-        ...
-
+        if self._internal_semaphore is None:
+            return SemaphoreStatistics(tasks_waiting=0)
+        return self._semaphore.statistics()
 class CapacityLimiter:
     def __new__(cls, total_tokens: float) -> CapacityLimiter:
-        ...
-
+        try:
+            return get_async_backend().create_capacity_limiter(total_tokens)
+        except AsyncLibraryNotFoundError:
+            return CapacityLimiterAdapter(total_tokens)
     async def __aenter__(self) -> None:
         raise NotImplementedError
     async def __aexit__(
@@ -402,84 +417,60 @@ class CapacityLimiter:
         .. versionchanged:: 3.0
             The property is now writable.
         """
-        ...
-
+        raise NotImplementedError
     @total_tokens.setter
     def total_tokens(self, value: float) -> None:
-        ...
-
+        raise NotImplementedError
     @property
     def borrowed_tokens(self) -> int:
         """The number of tokens that have currently been borrowed."""
-        raise NotImplementedError
+        ...
+
     @property
     def available_tokens(self) -> float:
         """The number of tokens currently available to be borrowed"""
-        ...
-
+        raise NotImplementedError
     def acquire_nowait(self) -> None:
         """
-        Acquire a token for the current task without waiting for one to become
-        available.
-        :raises ~anyio.WouldBlock: if there are no tokens available for borrowing
         """
-        ...
-
+        raise NotImplementedError
     def acquire_on_behalf_of_nowait(self, borrower: object) -> None:
         """
-        Acquire a token without waiting for one to become available.
-        :param borrower: the entity borrowing a token
-        :raises ~anyio.WouldBlock: if there are no tokens available for borrowing
         """
-        ...
-
+        raise NotImplementedError
     async def acquire(self) -> None:
         """
-        Acquire a token for the current task, waiting if necessary for one to become
-        available.
         """
         raise NotImplementedError
     async def acquire_on_behalf_of(self, borrower: object) -> None:
         """
-        Acquire a token, waiting if necessary for one to become available.
-        :param borrower: the entity borrowing a token
         """
         raise NotImplementedError
     def release(self) -> None:
         """
-        Release the token held by the current task.
-        :raises RuntimeError: if the current task has not borrowed a token from this
-            limiter.
         """
-        ...
-
+        raise NotImplementedError
     def release_on_behalf_of(self, borrower: object) -> None:
         """
-        Release the token held by the given borrower.
-        :raises RuntimeError: if the borrower has not borrowed a token from this
-            limiter.
         """
-        ...
-
+        raise NotImplementedError
     def statistics(self) -> CapacityLimiterStatistics:
         """
-        Return statistics about the current state of this limiter.
-        .. versionadded:: 3.0
         """
-        ...
-
+        raise NotImplementedError
 class CapacityLimiterAdapter(CapacityLimiter):
     _internal_limiter: CapacityLimiter | None = None
     def __new__(cls, total_tokens: float) -> CapacityLimiterAdapter:
-        ...
-
+        return object.__new__(cls)
     def __init__(self, total_tokens: float) -> None:
-        ...
-
+        self.total_tokens = total_tokens
     @property
     def _limiter(self) -> CapacityLimiter:
-        ...
-
+        if self._internal_limiter is None:
+            self._internal_limiter = get_async_backend().create_capacity_limiter(
+                self._total_tokens
+            )
+        return self._internal_limiter
     async def __aenter__(self) -> None:
         await self._limiter.__aenter__()
     async def __aexit__(
@@ -491,41 +482,54 @@ class CapacityLimiterAdapter(CapacityLimiter):
         return await self._limiter.__aexit__(exc_type, exc_val, exc_tb)
     @property
     def total_tokens(self) -> float:
-        ...
-
+        if self._internal_limiter is None:
+            return self._total_tokens
+        return self._internal_limiter.total_tokens
     @total_tokens.setter
     def total_tokens(self, value: float) -> None:
-        ...
-
+        if not isinstance(value, int) and value is not math.inf:
+            raise TypeError("total_tokens must be an int or math.inf")
+        elif value < 1:
+            raise ValueError("total_tokens must be >= 1")
+        if self._internal_limiter is None:
+            self._total_tokens = value
+            return
+        self._limiter.total_tokens = value
     @property
     def borrowed_tokens(self) -> int:
-        ...
-
+        if self._internal_limiter is None:
+            return 0
+        return self._internal_limiter.borrowed_tokens
     @property
     def available_tokens(self) -> float:
-        ...
-
+        if self._internal_limiter is None:
+            return self._total_tokens
+        return self._internal_limiter.available_tokens
     def acquire_nowait(self) -> None:
-        ...
-
+        self._limiter.acquire_nowait()
     def acquire_on_behalf_of_nowait(self, borrower: object) -> None:
-        ...
-
+        self._limiter.acquire_on_behalf_of_nowait(borrower)
     async def acquire(self) -> None:
         await self._limiter.acquire()
     async def acquire_on_behalf_of(self, borrower: object) -> None:
         await self._limiter.acquire_on_behalf_of(borrower)
     def release(self) -> None:
-        ...
-
+        self._limiter.release()
     def release_on_behalf_of(self, borrower: object) -> None:
-        ...
-
+        self._limiter.release_on_behalf_of(borrower)
     def statistics(self) -> CapacityLimiterStatistics:
-        ...
-
+        if self._internal_limiter is None:
+            return CapacityLimiterStatistics(
+                borrowed_tokens=0,
+                total_tokens=self.total_tokens,
+                borrowers=(),
+                tasks_waiting=0,
+            )
+        return self._internal_limiter.statistics()
 class ResourceGuard:
     """
+        ...
+
     A context manager for ensuring that a resource is only used by a single task at a
     time.
     Entering this context manager while the previous has not exited it yet will trigger
@@ -536,16 +540,16 @@ class ResourceGuard:
     """
     __slots__ = "action", "_guarded"
     def __init__(self, action: str = "using"):
-        ...
-
+        self.action: str = action
+        self._guarded = False
     def __enter__(self) -> None:
-        ...
-
+        if self._guarded:
+            raise BusyResourceError(self.action)
+        self._guarded = True
     def __exit__(
         self,
         exc_type: type[BaseException] | None,
         exc_val: BaseException | None,
         exc_tb: TracebackType | None,
     ) -> None:
-        ...
-
+        self._guarded = False

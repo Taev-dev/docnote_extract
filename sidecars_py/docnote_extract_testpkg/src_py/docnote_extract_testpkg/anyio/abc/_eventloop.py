@@ -86,50 +86,28 @@ class AsyncBackend(metaclass=ABCMeta):
             with
         :return: the return value of the coroutine function
         """
-        ...
-
-    @classmethod
-    @abstractmethod
-    def current_token(cls) -> object:
         """
         :return:
         """
-        ...
-
-    @classmethod
-    @abstractmethod
-    def current_time(cls) -> float:
         """
         Return the current value of the event loop's internal clock.
         :return: the clock value (seconds)
         """
-        ...
-
-    @classmethod
-    @abstractmethod
-    def cancelled_exception_class(cls) -> type[BaseException]:
         """Return the exception class that is raised in a task if it's cancelled."""
     @classmethod
     @abstractmethod
     async def checkpoint(cls) -> None:
         """
-        ...
-
+        """
     @classmethod
     async def checkpoint_if_cancelled(cls) -> None:
         """
-        Check if the current task group has been cancelled.
-        This will check if the task has been cancelled, but will not allow other tasks
-        to be scheduled if not.
         """
         if cls.current_effective_deadline() == -math.inf:
             await cls.checkpoint()
     @classmethod
     async def cancel_shielded_checkpoint(cls) -> None:
         """
-        Allow the rescheduling of other tasks.
-        This will give other tasks the opportunity to run, but without checking if the
-        current task group has been cancelled, unlike with :meth:`checkpoint`.
         """
         with cls.create_cancel_scope(shield=True):
             await cls.sleep(0)
@@ -137,45 +115,30 @@ class AsyncBackend(metaclass=ABCMeta):
     @abstractmethod
     async def sleep(cls, delay: float) -> None:
         """
-        Pause the current task for the specified duration.
-        :param delay: the duration, in seconds
         """
     @classmethod
     @abstractmethod
     def create_cancel_scope(
         cls, *, deadline: float = math.inf, shield: bool = False
     ) -> CancelScope:
-        ...
-
+        pass
     @classmethod
     @abstractmethod
     def current_effective_deadline(cls) -> float:
         """
-        Return the nearest deadline among all the cancel scopes effective for the
-        current task.
-        :return:
-            - a clock value from the event loop's internal clock
-            - ``inf`` if there is no deadline in effect
-            - ``-inf`` if the current scope has been cancelled
-        :rtype: float
         """
-        ...
-
     @classmethod
     @abstractmethod
     def create_task_group(cls) -> TaskGroup:
-        ...
-
+        pass
     @classmethod
     @abstractmethod
     def create_event(cls) -> Event:
-        ...
-
+        pass
     @classmethod
     @abstractmethod
     def create_lock(cls, *, fast_acquire: bool) -> Lock:
-        ...
-
+        pass
     @classmethod
     @abstractmethod
     def create_semaphore(
@@ -185,13 +148,11 @@ class AsyncBackend(metaclass=ABCMeta):
         max_value: int | None = None,
         fast_acquire: bool = False,
     ) -> Semaphore:
-        ...
-
+        pass
     @classmethod
     @abstractmethod
     def create_capacity_limiter(cls, total_tokens: float) -> CapacityLimiter:
-        ...
-
+        pass
     @classmethod
     @abstractmethod
     async def run_sync_in_worker_thread(
@@ -205,8 +166,7 @@ class AsyncBackend(metaclass=ABCMeta):
     @classmethod
     @abstractmethod
     def check_cancelled(cls) -> None:
-        ...
-
+        pass
     @classmethod
     @abstractmethod
     def run_async_from_thread(
@@ -215,8 +175,7 @@ class AsyncBackend(metaclass=ABCMeta):
         args: tuple[Unpack[PosArgsT]],
         token: object,
     ) -> T_Retval:
-        ...
-
+        pass
     @classmethod
     @abstractmethod
     def run_sync_from_thread(
@@ -225,13 +184,11 @@ class AsyncBackend(metaclass=ABCMeta):
         args: tuple[Unpack[PosArgsT]],
         token: object,
     ) -> T_Retval:
-        ...
-
+        pass
     @classmethod
     @abstractmethod
     def create_blocking_portal(cls) -> BlockingPortal:
-        ...
-
+        pass
     @classmethod
     @abstractmethod
     async def open_process(
@@ -247,8 +204,7 @@ class AsyncBackend(metaclass=ABCMeta):
     @classmethod
     @abstractmethod
     def setup_process_pool_exit_at_shutdown(cls, workers: set[Process]) -> None:
-        ...
-
+        pass
     @classmethod
     @abstractmethod
     async def connect_tcp(
@@ -262,13 +218,11 @@ class AsyncBackend(metaclass=ABCMeta):
     @classmethod
     @abstractmethod
     def create_tcp_listener(cls, sock: socket) -> SocketListener:
-        ...
-
+        pass
     @classmethod
     @abstractmethod
     def create_unix_listener(cls, sock: socket) -> SocketListener:
-        ...
-
+        pass
     @classmethod
     @abstractmethod
     async def create_udp_socket(
@@ -333,8 +287,7 @@ class AsyncBackend(metaclass=ABCMeta):
     @classmethod
     @abstractmethod
     def notify_closing(cls, obj: FileDescriptorLike) -> None:
-        ...
-
+        pass
     @classmethod
     @abstractmethod
     async def wrap_listener_socket(cls, sock: socket) -> SocketListener:
@@ -368,25 +321,21 @@ class AsyncBackend(metaclass=ABCMeta):
     @classmethod
     @abstractmethod
     def current_default_thread_limiter(cls) -> CapacityLimiter:
-        ...
-
+        pass
     @classmethod
     @abstractmethod
     def open_signal_receiver(
         cls, *signals: Signals
     ) -> AbstractContextManager[AsyncIterator[Signals]]:
-        ...
-
+        pass
     @classmethod
     @abstractmethod
     def get_current_task(cls) -> TaskInfo:
-        ...
-
+        pass
     @classmethod
     @abstractmethod
     def get_running_tasks(cls) -> Sequence[TaskInfo]:
-        ...
-
+        pass
     @classmethod
     @abstractmethod
     async def wait_all_tasks_blocked(cls) -> None:
@@ -394,5 +343,4 @@ class AsyncBackend(metaclass=ABCMeta):
     @classmethod
     @abstractmethod
     def create_test_runner(cls, options: dict[str, Any]) -> TestRunner:
-        ...
-
+        pass

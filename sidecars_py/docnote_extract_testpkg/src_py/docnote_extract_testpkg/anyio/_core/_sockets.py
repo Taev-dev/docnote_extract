@@ -165,7 +165,6 @@ async def connect_tcp(
     :return: a socket stream object if no TLS handshake was done, otherwise a TLS stream
     :raises ConnectionFailed: if the connection fails
     """
-    
     connected_stream: SocketStream | None = None
     async def try_connect(remote_host: str, event: Event) -> None:
         nonlocal connected_stream
@@ -199,12 +198,9 @@ async def connect_tcp(
         else:
             target_addrs = [(socket.AF_INET, addr_obj.compressed)]
     else:
-        
         gai_res = await getaddrinfo(
             target_host, remote_port, family=family, type=socket.SOCK_STREAM
         )
-        
-        
         v6_found = v4_found = False
         target_addrs = []
         for af, *_, sa in gai_res:
@@ -289,29 +285,20 @@ async def create_tcp_listener(
     )
     listeners: list[SocketListener] = []
     try:
-        
-        
         sockaddr: tuple[str, int] | tuple[str, int, int, int]
         for fam, kind, *_, sockaddr in sorted(set(gai_res)):
-            
-            
-            
             if sys.platform != "win32" and kind is not SocketKind.SOCK_STREAM:
                 continue
             raw_socket = socket.socket(fam)
             raw_socket.setblocking(False)
-            
-            
             if sys.platform == "win32":
                 raw_socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
             else:
                 raw_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             if reuse_port:
                 raw_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
-            
             if fam == socket.AF_INET6:
                 raw_socket.setsockopt(IPPROTO_IPV6, socket.IPV6_V6ONLY, 1)
-                
                 if "%" in sockaddr[0]:
                     addr, scope_id = sockaddr[0].split("%", 1)
                     sockaddr = (addr, sockaddr[1], 0, int(scope_id))
@@ -503,7 +490,6 @@ async def getaddrinfo(
     :return: list of tuples containing (family, type, proto, canonname, sockaddr)
     .. seealso:: :func:`socket.getaddrinfo`
     """
-    
     if isinstance(host, str):
         try:
             encoded_host: bytes | None = host.encode("ascii")
@@ -518,7 +504,6 @@ async def getaddrinfo(
     return [
         (family, type, proto, canonname, convert_ipv6_sockaddr(sockaddr))
         for family, type, proto, canonname, sockaddr in gai_res
-        
         if not isinstance(sockaddr[0], int)
     ]
 def getnameinfo(sockaddr: IPSockAddrType, flags: int = 0) -> Awaitable[tuple[str, str]]:
@@ -657,9 +642,7 @@ async def setup_unix_local_socket(
     path_str: str | None
     if path is not None:
         path_str = os.fsdecode(path)
-        
         if not path_str.startswith("\0"):
-            
             try:
                 stat_result = os.stat(path)
             except OSError as e:

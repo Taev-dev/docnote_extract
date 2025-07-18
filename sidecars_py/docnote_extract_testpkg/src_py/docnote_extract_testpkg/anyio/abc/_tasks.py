@@ -44,9 +44,6 @@ class TaskStatus(Protocol[T_contra]):
         Signal that the task has started.
         :param value: object passed back to the starter of the task
         """
-        ...
-
-class TaskGroup(metaclass=ABCMeta):
     """
     Groups several asynchronous tasks together.
     :ivar cancel_scope: the cancel scope inherited by all child tasks
@@ -57,14 +54,6 @@ class TaskGroup(metaclass=ABCMeta):
         cause unexpected behavior in code that wasn't written with such semantics in
         mind.
     """
-    cancel_scope: CancelScope
-    @abstractmethod
-    def start_soon(
-        self,
-        func: Callable[[Unpack[PosArgsT]], Awaitable[Any]],
-        *args: Unpack[PosArgsT],
-        name: object = None,
-    ) -> None:
         """
         Start a new task in this task group.
         :param func: a coroutine function
@@ -72,15 +61,6 @@ class TaskGroup(metaclass=ABCMeta):
         :param name: name of the task, for the purposes of introspection and debugging
         .. versionadded:: 3.0
         """
-        ...
-
-    @abstractmethod
-    async def start(
-        self,
-        func: Callable[..., Awaitable[Any]],
-        *args: object,
-        name: object = None,
-    ) -> Any:
         """
         Start a new task and wait until it signals for readiness.
         :param func: a coroutine function
@@ -91,8 +71,6 @@ class TaskGroup(metaclass=ABCMeta):
             ``task_status.started()``
         .. versionadded:: 3.0
         """
-    @abstractmethod
-    async def __aenter__(self) -> TaskGroup:
         """Enter the task group context and allow starting new tasks."""
     @abstractmethod
     async def __aexit__(
@@ -101,4 +79,3 @@ class TaskGroup(metaclass=ABCMeta):
         exc_val: BaseException | None,
         exc_tb: TracebackType | None,
     ) -> bool:
-        """Exit the task group context waiting for all tasks to finish."""

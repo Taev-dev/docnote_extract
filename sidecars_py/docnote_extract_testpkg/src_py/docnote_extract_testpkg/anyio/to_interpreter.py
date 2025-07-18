@@ -152,7 +152,6 @@ async def run_sync(
     try:
         return await worker.call(func, args, limiter)
     finally:
-        
         now = current_time()
         while idle_workers:
             if now - idle_workers[0].last_used <= MAX_WORKER_IDLE_TIME:

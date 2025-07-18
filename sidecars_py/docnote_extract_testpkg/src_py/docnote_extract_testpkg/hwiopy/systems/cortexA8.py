@@ -119,7 +119,6 @@ class _register_map():
     --------------------------------------------------------
     register_type=None: tuple           ['gpio', 'pwm'...]
     register_type=str:  tuple           ['autoidle', 'enawakeup'...]
-    
     _register_map.describe():
     =========================================================
     *args
@@ -129,7 +128,6 @@ class _register_map():
     -------------------------------------------------------
     dict                {'function': ['bit op 1', 'bit op 2'...]}
     '''
-    
     _channelwise = '_intchannel'
     def __init__(self):
         ...

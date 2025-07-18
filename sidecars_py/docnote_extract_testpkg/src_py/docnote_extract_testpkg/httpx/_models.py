@@ -259,9 +259,6 @@ class Request:
             assert isinstance(self.stream, typing.AsyncIterable)
             self._content = b"".join([part async for part in self.stream])
             if not isinstance(self.stream, ByteStream):
-                
-                
-                
                 self.stream = ByteStream(self._content)
         return self._content
     def __repr__(self) -> str:

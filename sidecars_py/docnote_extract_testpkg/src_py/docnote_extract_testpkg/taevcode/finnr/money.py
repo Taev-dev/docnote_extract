@@ -55,10 +55,6 @@ class Money(MoneyMathImpl):
     def round_to_minor(self, rounding=ROUND_HALF_UP) -> Money: ...
     @property
     def is_nominal_division(self) -> bool: ...
-        
-        
     @property
     def is_nominal_major(self) -> bool: ...
-        
-        
 finnr._moneymath.Money = Money

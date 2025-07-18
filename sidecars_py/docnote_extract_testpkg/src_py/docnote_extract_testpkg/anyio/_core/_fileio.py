@@ -161,11 +161,6 @@ async def open_file(
     opener: Callable[[str, int], int] | None = None,
 ) -> AsyncFile[Any]:
     """
-        ...
-
-    Open a file asynchronously.
-    The arguments are exactly the same as for the builtin :func:`open`.
-    :return: an asynchronous file object
     """
     fp = await to_thread.run_sync(
         open, file, mode, buffering, encoding, errors, newline, closefd, opener
@@ -173,12 +168,8 @@ async def open_file(
     return AsyncFile(fp)
 def wrap_file(file: IO[AnyStr]) -> AsyncFile[AnyStr]:
     """
-    Wrap an existing file as an asynchronous file.
-    :param file: an existing file-like object
-    :return: an asynchronous file object
     """
-    ...
-
+    return AsyncFile(file)
 @dataclass(eq=False)
 class _PathIterator(AsyncIterator["Path"]):
     iterator: Iterator[PathLike[str]]
@@ -191,186 +182,97 @@ class _PathIterator(AsyncIterator["Path"]):
         return Path(nextval)
 class Path:
     """
-    An asynchronous version of :class:`pathlib.Path`.
-    This class cannot be substituted for :class:`pathlib.Path` or
-    :class:`pathlib.PurePath`, but it is compatible with the :class:`os.PathLike`
-    interface.
-    It implements the Python 3.10 version of :class:`pathlib.Path` interface, except for
-    the deprecated :meth:`~pathlib.Path.link_to` method.
-    Some methods may be unavailable or have limited functionality, based on the Python
-    version:
-    * :meth:`~pathlib.Path.copy` (available on Python 3.14 or later)
-    * :meth:`~pathlib.Path.copy_into` (available on Python 3.14 or later)
-    * :meth:`~pathlib.Path.from_uri` (available on Python 3.13 or later)
-    * :meth:`~pathlib.PurePath.full_match` (available on Python 3.13 or later)
-    * :attr:`~pathlib.Path.info` (available on Python 3.14 or later)
-    * :meth:`~pathlib.Path.is_junction` (available on Python 3.12 or later)
-    * :meth:`~pathlib.PurePath.match` (the ``case_sensitive`` parameter is only
-      available on Python 3.13 or later)
-    * :meth:`~pathlib.Path.move` (available on Python 3.14 or later)
-    * :meth:`~pathlib.Path.move_into` (available on Python 3.14 or later)
-    * :meth:`~pathlib.PurePath.relative_to` (the ``walk_up`` parameter is only available
-      on Python 3.12 or later)
-    * :meth:`~pathlib.Path.walk` (available on Python 3.12 or later)
-    Any methods that do disk I/O need to be awaited on. These methods are:
-    * :meth:`~pathlib.Path.absolute`
-    * :meth:`~pathlib.Path.chmod`
-    * :meth:`~pathlib.Path.cwd`
-    * :meth:`~pathlib.Path.exists`
-    * :meth:`~pathlib.Path.expanduser`
-    * :meth:`~pathlib.Path.group`
-    * :meth:`~pathlib.Path.hardlink_to`
-    * :meth:`~pathlib.Path.home`
-    * :meth:`~pathlib.Path.is_block_device`
-    * :meth:`~pathlib.Path.is_char_device`
-    * :meth:`~pathlib.Path.is_dir`
-    * :meth:`~pathlib.Path.is_fifo`
-    * :meth:`~pathlib.Path.is_file`
-    * :meth:`~pathlib.Path.is_junction`
-    * :meth:`~pathlib.Path.is_mount`
-    * :meth:`~pathlib.Path.is_socket`
-    * :meth:`~pathlib.Path.is_symlink`
-    * :meth:`~pathlib.Path.lchmod`
-    * :meth:`~pathlib.Path.lstat`
-    * :meth:`~pathlib.Path.mkdir`
-    * :meth:`~pathlib.Path.open`
-    * :meth:`~pathlib.Path.owner`
-    * :meth:`~pathlib.Path.read_bytes`
-    * :meth:`~pathlib.Path.read_text`
-    * :meth:`~pathlib.Path.readlink`
-    * :meth:`~pathlib.Path.rename`
-    * :meth:`~pathlib.Path.replace`
-    * :meth:`~pathlib.Path.resolve`
-    * :meth:`~pathlib.Path.rmdir`
-    * :meth:`~pathlib.Path.samefile`
-    * :meth:`~pathlib.Path.stat`
-    * :meth:`~pathlib.Path.symlink_to`
-    * :meth:`~pathlib.Path.touch`
-    * :meth:`~pathlib.Path.unlink`
-    * :meth:`~pathlib.Path.walk`
-    * :meth:`~pathlib.Path.write_bytes`
-    * :meth:`~pathlib.Path.write_text`
-    Additionally, the following methods return an async iterator yielding
-    :class:`~.Path` objects:
-    * :meth:`~pathlib.Path.glob`
-    * :meth:`~pathlib.Path.iterdir`
-    * :meth:`~pathlib.Path.rglob`
     """
     __slots__ = "_path", "__weakref__"
     __weakref__: Any
     def __init__(self, *args: str | PathLike[str]) -> None:
-        ...
-
+        self._path: Final[pathlib.Path] = pathlib.Path(*args)
     def __fspath__(self) -> str:
-        ...
-
+        return self._path.__fspath__()
     def __str__(self) -> str:
-        ...
-
+        return self._path.__str__()
     def __repr__(self) -> str:
-        ...
-
+        return f"{self.__class__.__name__}({self.as_posix()!r})"
     def __bytes__(self) -> bytes:
-        ...
-
+        return self._path.__bytes__()
     def __hash__(self) -> int:
-        ...
-
+        return self._path.__hash__()
     def __eq__(self, other: object) -> bool:
-        ...
-
+        target = other._path if isinstance(other, Path) else other
+        return self._path.__eq__(target)
     def __lt__(self, other: pathlib.PurePath | Path) -> bool:
-        ...
-
+        target = other._path if isinstance(other, Path) else other
+        return self._path.__lt__(target)
     def __le__(self, other: pathlib.PurePath | Path) -> bool:
-        ...
-
+        target = other._path if isinstance(other, Path) else other
+        return self._path.__le__(target)
     def __gt__(self, other: pathlib.PurePath | Path) -> bool:
-        ...
-
+        target = other._path if isinstance(other, Path) else other
+        return self._path.__gt__(target)
     def __ge__(self, other: pathlib.PurePath | Path) -> bool:
-        ...
-
+        target = other._path if isinstance(other, Path) else other
+        return self._path.__ge__(target)
     def __truediv__(self, other: str | PathLike[str]) -> Path:
-        ...
-
+        return Path(self._path / other)
     def __rtruediv__(self, other: str | PathLike[str]) -> Path:
-        ...
-
+        return Path(other) / self
     @property
     def parts(self) -> tuple[str, ...]:
-        ...
-
+        return self._path.parts
     @property
     def drive(self) -> str:
-        ...
-
+        return self._path.drive
     @property
     def root(self) -> str:
-        ...
-
+        return self._path.root
     @property
     def anchor(self) -> str:
-        ...
-
+        return self._path.anchor
     @property
     def parents(self) -> Sequence[Path]:
-        ...
-
+        return tuple(Path(p) for p in self._path.parents)
     @property
     def parent(self) -> Path:
-        ...
-
+        return Path(self._path.parent)
     @property
     def name(self) -> str:
-        ...
-
+        return self._path.name
     @property
     def suffix(self) -> str:
-        ...
-
+        return self._path.suffix
     @property
     def suffixes(self) -> list[str]:
-        ...
-
+        return self._path.suffixes
     @property
     def stem(self) -> str:
-        ...
-
+        return self._path.stem
     async def absolute(self) -> Path:
         path = await to_thread.run_sync(self._path.absolute)
         return Path(path)
     def as_posix(self) -> str:
-        ...
-
+        return self._path.as_posix()
     def as_uri(self) -> str:
-        ...
-
+        return self._path.as_uri()
     if sys.version_info >= (3, 13):
         parser: ClassVar[ModuleType] = pathlib.Path.parser
         @classmethod
         def from_uri(cls, uri: str) -> Path:
-            ...
-
+            return Path(pathlib.Path.from_uri(uri))
         def full_match(
             self, path_pattern: str, *, case_sensitive: bool | None = None
         ) -> bool:
-            ...
-
+            return self._path.full_match(path_pattern, case_sensitive=case_sensitive)
         def match(
             self, path_pattern: str, *, case_sensitive: bool | None = None
         ) -> bool:
-            ...
-
+            return self._path.match(path_pattern, case_sensitive=case_sensitive)
     else:
         def match(self, path_pattern: str) -> bool:
-            ...
-
+            return self._path.match(path_pattern)
     if sys.version_info >= (3, 14):
         @property
         def info(self) -> Any:  
-            ...
-
+            return self._path.info
         async def copy(
             self,
             target: str | os.PathLike[str],
@@ -398,7 +300,6 @@ class Path:
             )
             return Path(await to_thread.run_sync(func, pathlib.Path(target_dir)))
         async def move(self, target: str | os.PathLike[str]) -> Path:
-            
             target = pathlib.Path(target)
             return Path(await to_thread.run_sync(self._path.move, target))
         async def move_into(
@@ -407,8 +308,11 @@ class Path:
         ) -> Path:
             return Path(await to_thread.run_sync(self._path.move_into, target_dir))
     def is_relative_to(self, other: str | PathLike[str]) -> bool:
-        ...
-
+        try:
+            self.relative_to(other)
+            return True
+        except ValueError:
+            return False
     async def chmod(self, mode: int, *, follow_symlinks: bool = True) -> None:
         func = partial(os.chmod, follow_symlinks=follow_symlinks)
         return await to_thread.run_sync(func, self._path, mode)
@@ -423,8 +327,8 @@ class Path:
             await to_thread.run_sync(self._path.expanduser, abandon_on_cancel=True)
         )
     def glob(self, pattern: str) -> AsyncIterator[Path]:
-        ...
-
+        gen = self._path.glob(pattern)
+        return _PathIterator(gen)
     async def group(self) -> str:
         return await to_thread.run_sync(self._path.group, abandon_on_cancel=True)
     async def hardlink_to(
@@ -438,8 +342,7 @@ class Path:
         home_path = await to_thread.run_sync(pathlib.Path.home)
         return cls(home_path)
     def is_absolute(self) -> bool:
-        ...
-
+        return self._path.is_absolute()
     async def is_block_device(self) -> bool:
         return await to_thread.run_sync(
             self._path.is_block_device, abandon_on_cancel=True
@@ -462,8 +365,7 @@ class Path:
             os.path.ismount, self._path, abandon_on_cancel=True
         )
     def is_reserved(self) -> bool:
-        ...
-
+        return self._path.is_reserved()
     async def is_socket(self) -> bool:
         return await to_thread.run_sync(self._path.is_socket, abandon_on_cancel=True)
     async def is_symlink(self) -> bool:
@@ -477,8 +379,7 @@ class Path:
         async for path in _PathIterator(gen):
             yield path
     def joinpath(self, *args: str | PathLike[str]) -> Path:
-        ...
-
+        return Path(self._path.joinpath(*args))
     async def lchmod(self, mode: int) -> None:
         await to_thread.run_sync(self._path.lchmod, mode)
     async def lstat(self) -> os.stat_result:
@@ -529,12 +430,11 @@ class Path:
         def relative_to(
             self, *other: str | PathLike[str], walk_up: bool = False
         ) -> Path:
-            ...
-
+            others = [pathlib.Path(other) for other in other]
+            return Path(self._path.relative_to(*others, walk_up=walk_up))
     else:
         def relative_to(self, *other: str | PathLike[str]) -> Path:
-            ...
-
+            return Path(self._path.relative_to(*other))
     async def readlink(self) -> Path:
         target = await to_thread.run_sync(os.readlink, self._path)
         return Path(target)
@@ -552,8 +452,8 @@ class Path:
         func = partial(self._path.resolve, strict=strict)
         return Path(await to_thread.run_sync(func, abandon_on_cancel=True))
     def rglob(self, pattern: str) -> AsyncIterator[Path]:
-        ...
-
+        gen = self._path.rglob(pattern)
+        return _PathIterator(gen)
     async def rmdir(self) -> None:
         await to_thread.run_sync(self._path.rmdir)
     async def samefile(self, other_path: str | PathLike[str]) -> bool:
@@ -589,8 +489,10 @@ class Path:
             follow_symlinks: bool = False,
         ) -> AsyncIterator[tuple[Path, list[str], list[str]]]:
             def get_next_value() -> tuple[pathlib.Path, list[str], list[str]] | None:
-                ...
-
+                try:
+                    return next(gen)
+                except StopIteration:
+                    return None
             gen = self._path.walk(top_down, on_error, follow_symlinks)
             while True:
                 value = await to_thread.run_sync(get_next_value)
@@ -599,17 +501,13 @@ class Path:
                 root, dirs, paths = value
                 yield Path(root), dirs, paths
     def with_name(self, name: str) -> Path:
-        ...
-
+        return Path(self._path.with_name(name))
     def with_stem(self, stem: str) -> Path:
-        ...
-
+        return Path(self._path.with_name(stem + self._path.suffix))
     def with_suffix(self, suffix: str) -> Path:
-        ...
-
+        return Path(self._path.with_suffix(suffix))
     def with_segments(self, *pathsegments: str | PathLike[str]) -> Path:
-        ...
-
+        return Path(*pathsegments)
     async def write_bytes(self, data: bytes) -> int:
         return await to_thread.run_sync(self._path.write_bytes, data)
     async def write_text(
@@ -619,9 +517,10 @@ class Path:
         errors: str | None = None,
         newline: str | None = None,
     ) -> int:
-        
         def sync_write_text() -> int:
-            ...
-
+            with self._path.open(
+                "w", encoding=encoding, errors=errors, newline=newline
+            ) as fp:
+                return fp.write(data)
         return await to_thread.run_sync(sync_write_text)
 PathLike.register(Path)

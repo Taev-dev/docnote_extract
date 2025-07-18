@@ -47,7 +47,6 @@ class Timeout:
     Timeout(None, connect=5.0)  
     Timeout(5.0, connect=10.0)  
     Timeout(5.0, pool=None)     
-                                
     """
     def __init__(
         self,

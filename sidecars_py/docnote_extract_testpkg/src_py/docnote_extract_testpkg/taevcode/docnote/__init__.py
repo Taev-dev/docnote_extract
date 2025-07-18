@@ -137,8 +137,14 @@ class DocnoteConfig:
     child_groups: Annotated[
             Sequence[DocnoteGroup] | None,
             Note('''This defines both the groups that should be available
-                ...
-
+                for immediate children to assign themselves to, as well as
+                their desired ordering in the final documentation.
+                **Note that this applies only to the immediate children of
+                the scope the config was assigned to.** For example, if the
+                config is assigned to a module, it will apply only to toplevel
+                members of the module (classes, functions, etc defined directly
+                as part of the module).
+                ''')
         ] = field(default=None, metadata={'docnote.stacked': False})
     metadata: Annotated[
             dict[str, Any] | None,

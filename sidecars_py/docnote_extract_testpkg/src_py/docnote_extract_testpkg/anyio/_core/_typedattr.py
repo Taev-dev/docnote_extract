@@ -31,9 +31,18 @@ def typed_attribute() -> Any:
     return object()
 class TypedAttributeSet:
     """
+    """
+    def __init_subclass__(cls) -> None:
+        annotations: dict[str, Any] = getattr(cls, "__annotations__", {})
+        for attrname in dir(cls):
+            if not attrname.startswith("_") and attrname not in annotations:
+                raise TypeError(
+                    f"Attribute {attrname!r} is missing its type annotation"
+                )
+        super().__init_subclass__()
+class TypedAttributeProvider:
     ...
 
-class TypedAttributeProvider:
     """Base class for classes that wish to provide typed extra attributes."""
     @property
     def extra_attributes(self) -> Mapping[T_Attr, Callable[[], T_Attr]]:

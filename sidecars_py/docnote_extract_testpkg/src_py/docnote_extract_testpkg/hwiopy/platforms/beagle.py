@@ -93,10 +93,6 @@ class _header_map():
 class BBB(core.Device):
     ''' A beaglebone black. Must have kernel version >=3.8, use overlays, etc.
     '''
-    
-    
-    
-    
     def __init__(self, mem_filename='/dev/mem'): 
         ''' Creates the device and begins setting it up.
         '''

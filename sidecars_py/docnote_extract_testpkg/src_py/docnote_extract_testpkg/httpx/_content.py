@@ -71,13 +71,11 @@ class AsyncIteratorByteStream(AsyncByteStream):
             raise StreamConsumed()
         self._is_stream_consumed = True
         if hasattr(self._stream, "aread"):
-            
             chunk = await self._stream.aread(self.CHUNK_SIZE)
             while chunk:
                 yield chunk
                 chunk = await self._stream.aread(self.CHUNK_SIZE)
         else:
-            
             async for part in self._stream:
                 yield part
 class UnattachedStream(AsyncByteStream, SyncByteStream):

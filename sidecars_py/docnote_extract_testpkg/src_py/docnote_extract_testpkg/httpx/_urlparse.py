@@ -109,7 +109,6 @@ AUTHORITY_REGEX = re.compile(
     ).format(
         userinfo=".*",  
         host="(\\[.*\\]|[^:@]*)",  
-        
         port=".*",  
     )
 )

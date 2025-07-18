@@ -42,9 +42,6 @@ class MockTransport(AsyncBaseTransport, BaseTransport):
     ) -> Response:
         await request.aread()
         response = self.handler(request)
-        
-        
-        
         if not isinstance(response, Response):
             response = await response
         return response

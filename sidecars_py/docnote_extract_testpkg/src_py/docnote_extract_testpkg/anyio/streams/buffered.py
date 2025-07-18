@@ -74,42 +74,44 @@ class BufferedByteReceiveStream(ByteReceiveStream):
                 return chunk
     async def receive_exactly(self, nbytes: int) -> bytes:
         """
-        ...
-
+        """
+        while True:
+            remaining = nbytes - len(self._buffer)
+            if remaining <= 0:
+                retval = self._buffer[:nbytes]
+                del self._buffer[:nbytes]
+                return bytes(retval)
+            try:
+                if isinstance(self.receive_stream, ByteReceiveStream):
+                    chunk = await self.receive_stream.receive(remaining)
+                else:
+                    chunk = await self.receive_stream.receive()
+            except EndOfStream as exc:
+                raise IncompleteRead from exc
+            self._buffer.extend(chunk)
     async def receive_until(self, delimiter: bytes, max_bytes: int) -> bytes:
         """
-        Read from the stream until the delimiter is found or max_bytes have been read.
-        :param delimiter: the marker to look for in the stream
-        :param max_bytes: maximum number of bytes that will be read before raising
-            :exc:`~anyio.DelimiterNotFound`
-        :return: the bytes read (not including the delimiter)
-        :raises ~anyio.IncompleteRead: if the stream was closed before the delimiter
-            was found
-        :raises ~anyio.DelimiterNotFound: if the delimiter is not found within the
-            bytes read up to the maximum allowed
         """
         delimiter_size = len(delimiter)
         offset = 0
         while True:
-            
             index = self._buffer.find(delimiter, offset)
             if index >= 0:
                 found = self._buffer[:index]
                 del self._buffer[: index + len(delimiter) :]
                 return bytes(found)
-            
             if len(self._buffer) >= max_bytes:
                 raise DelimiterNotFound(max_bytes)
-            
             try:
                 data = await self.receive_stream.receive()
             except EndOfStream as exc:
                 raise IncompleteRead from exc
-            
             offset = max(len(self._buffer) - delimiter_size + 1, 0)
             self._buffer.extend(data)
 class BufferedByteStream(BufferedByteReceiveStream, ByteStream):
     """
+        ...
+
     A full-duplex variant of :class:`BufferedByteReceiveStream`. All writes are passed
     through to the wrapped stream as-is.
     """
@@ -117,8 +119,8 @@ class BufferedByteStream(BufferedByteReceiveStream, ByteStream):
         """
         :param stream: the stream to be wrapped
         """
-        ...
-
+        super().__init__(stream)
+        self._stream = stream
     @override
     async def send_eof(self) -> None:
         await self._stream.send_eof()
@@ -130,8 +132,7 @@ class BufferedConnectable(ByteStreamConnectable):
         """
         :param connectable: the connectable to wrap
         """
-        ...
-
+        self.connectable = connectable
     @override
     async def connect(self) -> BufferedByteStream:
         stream = await self.connectable.connect()

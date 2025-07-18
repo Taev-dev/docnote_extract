@@ -35,11 +35,8 @@ from .. import (
 )
 from ..abc import ByteReceiveStream, ByteSendStream
 class FileStreamAttribute(TypedAttributeSet):
-    
     file: BinaryIO = typed_attribute()
-    
     path: Path = typed_attribute()
-    
     fileno: int = typed_attribute()
 class _BaseFileStream:
     def __init__(self, file: BinaryIO):

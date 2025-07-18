@@ -116,7 +116,6 @@ class Device():
     at some point, provide a graceful fallback to sysfs access.
     __init()__
     =========================================================================
-    
     **kwargs
     ----------------------------------------------------------------
     resolve_header: callable    takes str pin_num and returns str term_num

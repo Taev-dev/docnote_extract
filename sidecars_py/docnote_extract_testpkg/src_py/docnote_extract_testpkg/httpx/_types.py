@@ -81,13 +81,9 @@ ResponseExtensions = Mapping[str, Any]
 RequestData = Mapping[str, Any]
 FileContent = Union[IO[bytes], bytes, str]
 FileTypes = Union[
-    
     FileContent,
-    
     Tuple[Optional[str], FileContent],
-    
     Tuple[Optional[str], FileContent, Optional[str]],
-    
     Tuple[Optional[str], FileContent, Optional[str], Mapping[str, str]],
 ]
 RequestFiles = Union[Mapping[str, FileTypes], Sequence[Tuple[str, FileTypes]]]
@@ -102,13 +98,3 @@ class SyncByteStream:
         Subclasses can override this method to release any network resources
         after a request/response cycle is complete.
         """
-        ...
-
-class AsyncByteStream:
-    async def __aiter__(self) -> AsyncIterator[bytes]:
-        raise NotImplementedError(
-            "The '__aiter__' method must be implemented."
-        )  
-        yield b""  
-    async def aclose(self) -> None:
-        pass

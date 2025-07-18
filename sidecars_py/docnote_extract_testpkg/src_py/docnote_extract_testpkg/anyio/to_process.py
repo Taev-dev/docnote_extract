@@ -95,10 +95,8 @@ async def run_sync(
             raise retval
         else:
             return retval
-    
     await checkpoint_if_cancelled()
     request = pickle.dumps(("run", func, args), protocol=pickle.HIGHEST_PROTOCOL)
-    
     try:
         workers = _process_pool_workers.get()
         idle_workers = _process_pool_idle_workers.get()
@@ -109,8 +107,6 @@ async def run_sync(
         _process_pool_idle_workers.set(idle_workers)
         get_async_backend().setup_process_pool_exit_at_shutdown(workers)
     async with limiter or current_default_process_limiter():
-        
-        
         process: Process
         while idle_workers:
             process, idle_since = idle_workers.pop()
@@ -119,8 +115,6 @@ async def run_sync(
                 buffered = BufferedByteReceiveStream(
                     cast(ByteReceiveStream, process.stdout)
                 )
-                
-                
                 now = current_time()
                 killed_processes: list[Process] = []
                 while idle_workers:

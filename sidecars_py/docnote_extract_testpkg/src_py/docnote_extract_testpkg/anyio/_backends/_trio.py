@@ -179,7 +179,6 @@ class TaskGroup(abc.TaskGroup):
         exc_tb: TracebackType | None,
     ) -> bool:
         try:
-            
             return await self._nursery_manager.__aexit__(exc_type, exc_val, exc_tb)  
         except BaseExceptionGroup as exc:
             if not exc.split(trio.Cancelled)[1]:
@@ -546,7 +545,6 @@ class Lock(BaseLock):
                 self._convert_runtime_error_msg(exc)
                 raise
             return
-        
         await trio.lowlevel.checkpoint_if_cancelled()
         try:
             self.__original.acquire_nowait()
@@ -590,7 +588,6 @@ class Semaphore(BaseSemaphore):
         if not self._fast_acquire:
             await self.__original.acquire()
             return
-        
         await trio.lowlevel.checkpoint_if_cancelled()
         try:
             self.__original.acquire_nowait()

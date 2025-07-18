@@ -51,17 +51,12 @@ from finnr.exceptions import MoneyRequired
 from finnr.exceptions import ScalarRequired
 if typing.TYPE_CHECKING:
     from finnr.currency import Currency
-    
-    
     from finnr.money import Money
 type _Scalar = Decimal | int
 class MoneyMathImpl(Protocol):
     amount: Decimal
     currency: Currency
     def __init__(self, amount: Decimal, currency: Currency): ...
-    
-    
-    
     def __mul__(self, other: _Scalar) -> Money:
         ...
 

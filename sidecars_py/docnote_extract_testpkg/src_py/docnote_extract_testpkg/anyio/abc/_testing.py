@@ -52,30 +52,16 @@ class TestRunner(metaclass=ABCMeta):
         :param kwargs: keyword arguments to call the fixture function with
         :return: an iterator yielding the value yielded from the async generator
         """
-        ...
-
-    @abstractmethod
-    def run_fixture(
-        self,
-        fixture_func: Callable[..., Coroutine[Any, Any, _T]],
-        kwargs: dict[str, Any],
-    ) -> _T:
         """
         Run an async fixture.
         :param fixture_func: the fixture function
         :param kwargs: keyword arguments to call the fixture function with
         :return: the return value of the fixture function
         """
-        ...
-
-    @abstractmethod
-    def run_test(
-        self, test_func: Callable[..., Coroutine[Any, Any, Any]], kwargs: dict[str, Any]
-    ) -> None:
         """
         Run an async test function.
         :param test_func: the test function
         :param kwargs: keyword arguments to call the test function with
         """
-        ...
+    ...
 

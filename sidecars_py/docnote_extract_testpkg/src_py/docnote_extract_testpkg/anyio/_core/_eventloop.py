@@ -95,14 +95,24 @@ def get_all_backends() -> tuple[str, ...]:
     return BACKENDS
 def get_cancelled_exc_class() -> type[BaseException]:
     """Return the current async library's cancellation exception class."""
-    ...
-
+    return get_async_backend().cancelled_exception_class()
 @contextmanager
 def claim_worker_thread(
     backend_class: type[AsyncBackend], token: object
 ) -> Generator[Any, None, None]:
-    ...
-
+    threadlocals.current_async_backend = backend_class
+    threadlocals.current_token = token
+    try:
+        yield
+    finally:
+        del threadlocals.current_async_backend
+        del threadlocals.current_token
 def get_async_backend(asynclib_name: str | None = None) -> type[AsyncBackend]:
-    ...
-
+    if asynclib_name is None:
+        asynclib_name = sniffio.current_async_library()
+    try:
+        return loaded_backends[asynclib_name]
+    except KeyError:
+        module = import_module(f"anyio._backends._{asynclib_name}")
+        loaded_backends[asynclib_name] = module.backend_class
+        return module.backend_class

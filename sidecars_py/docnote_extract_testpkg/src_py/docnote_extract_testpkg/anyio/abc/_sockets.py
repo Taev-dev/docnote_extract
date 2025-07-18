@@ -59,17 +59,11 @@ def _validate_socket(
     ...
 
 class SocketAttribute(TypedAttributeSet):
-    
     family: AddressFamily = typed_attribute()
-    
     local_address: SockAddrType = typed_attribute()
-    
     local_port: int = typed_attribute()
-    
     raw_socket: socket.socket = typed_attribute()
-    
     remote_address: SockAddrType = typed_attribute()
-    
     remote_port: int = typed_attribute()
 class _SocketProvider(TypedAttributeProvider):
     @property

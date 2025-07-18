@@ -68,9 +68,6 @@ class ContextManagerMixin:
             enclosed context block, so use a ``finally:`` block to clean up resources!
         :return: a context manager object
         """
-        ...
-
-class AsyncContextManagerMixin:
     """
     Mixin class providing async context manager functionality via a generator-based
     implementation.
@@ -81,63 +78,6 @@ class AsyncContextManagerMixin:
         that once you enter it, you can't re-enter before first exiting it.
     .. seealso:: :doc:`contextmanagers`
     """
-    __cm: AbstractAsyncContextManager[object, bool | None] | None = None
-    @final
-    async def __aenter__(self: _SupportsAsyncCtxMgr[_T_co, bool | None]) -> _T_co:
-        
-        assert isinstance(self, AsyncContextManagerMixin)
-        if self.__cm is not None:
-            raise RuntimeError(
-                f"this {self.__class__.__qualname__} has already been entered"
-            )
-        cm = self.__asynccontextmanager__()
-        if not isinstance(cm, AbstractAsyncContextManager):
-            if isasyncgen(cm):
-                raise TypeError(
-                    "__asynccontextmanager__() returned an async generator instead of "
-                    "an async context manager. Did you forget to add the "
-                    "@asynccontextmanager decorator?"
-                )
-            elif iscoroutine(cm):
-                cm.close()
-                raise TypeError(
-                    "__asynccontextmanager__() returned a coroutine object instead of "
-                    "an async context manager. Did you forget to add the "
-                    "@asynccontextmanager decorator and a 'yield' statement?"
-                )
-            raise TypeError(
-                f"__asynccontextmanager__() did not return an async context manager, "
-                f"but {cm.__class__!r}"
-            )
-        if cm is self:
-            raise TypeError(
-                f"{self.__class__.__qualname__}.__asynccontextmanager__() returned "
-                f"self. Did you forget to add the @asynccontextmanager decorator and a "
-                f"'yield' statement?"
-            )
-        value = await cm.__aenter__()
-        self.__cm = cm
-        return value
-    @final
-    async def __aexit__(
-        self: _SupportsAsyncCtxMgr[object, _ExitT_co],
-        exc_type: type[BaseException] | None,
-        exc_val: BaseException | None,
-        exc_tb: TracebackType | None,
-    ) -> _ExitT_co:
-        assert isinstance(self, AsyncContextManagerMixin)
-        if self.__cm is None:
-            raise RuntimeError(
-                f"this {self.__class__.__qualname__} has not been entered yet"
-            )
-        
-        cm = self.__cm
-        del self.__cm
-        return cast(_ExitT_co, await cm.__aexit__(exc_type, exc_val, exc_tb))
-    @abstractmethod
-    def __asynccontextmanager__(
-        self,
-    ) -> AbstractAsyncContextManager[object, bool | None]:
         """
         Implement your async context manager logic here.
         This method **must** be decorated with
@@ -146,5 +86,3 @@ class AsyncContextManagerMixin:
             enclosed context block, so use a ``finally:`` block to clean up resources!
         :return: an async context manager object
         """
-        ...
-
