@@ -1,24 +1,23 @@
-"""This is a programmatically-vendored code sample
-that has been stubbified (ie, function bodies removed). Do not modify
-it directly; your changes will just be overwritten.
+# This is a programmatically-vendored code sample
+# that has been stubbified (ie, function bodies removed). Do not modify
+# it directly; your changes will just be overwritten.
 
-The original source is:
-PkgSrcSpec(forge='github',
-           repo_id='Badg/hwiopy',
-           pkg_name='hwiopy',
-           offset_dest_root_dir=None,
-           root_path='hwiopy',
-           commit_hash='c6536bc4e1c410f835def3847e1881f2d7f0c076',
-           license_paths={'LICENSE.txt'})
+# The original source is:
+# PkgSrcSpec(forge='github',
+#            repo_id='Badg/hwiopy',
+#            pkg_name='hwiopy',
+#            offset_dest_root_dir=None,
+#            root_path='hwiopy',
+#            commit_hash='c6536bc4e1c410f835def3847e1881f2d7f0c076',
+#            license_paths={'LICENSE.txt'})
 
-The license of the original project is included in the top level of
-the vendored project directory.
+# The license of the original project is included in the top level of
+# the vendored project directory.
 
-To regenerate, see sidecars/docnote_extract_testpkg_factory. The
-command is:
-``uv run python -m docnote_extract_testpkg_factory``.
+# To regenerate, see sidecars/docnote_extract_testpkg_factory. The
+# command is:
+# ``uv run python -m docnote_extract_testpkg_factory``.
 
-"""
 ''' Beaglebone Black hardware-specific operations.
 LICENSING
 -------------------------------------------------

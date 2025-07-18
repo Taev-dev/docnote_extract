@@ -1,24 +1,23 @@
-"""This is a programmatically-vendored code sample
-that has been stubbified (ie, function bodies removed). Do not modify
-it directly; your changes will just be overwritten.
+# This is a programmatically-vendored code sample
+# that has been stubbified (ie, function bodies removed). Do not modify
+# it directly; your changes will just be overwritten.
 
-The original source is:
-PkgSrcSpec(forge='github',
-           repo_id='Taev-dev/docnote',
-           pkg_name='docnote',
-           offset_dest_root_dir='taevcode',
-           root_path='src_py/docnote',
-           commit_hash='7d4b0f7b8c13f4a952dba41f722ca9de0479e562',
-           license_paths=set())
+# The original source is:
+# PkgSrcSpec(forge='github',
+#            repo_id='Taev-dev/docnote',
+#            pkg_name='docnote',
+#            offset_dest_root_dir='taevcode',
+#            root_path='src_py/docnote',
+#            commit_hash='7d4b0f7b8c13f4a952dba41f722ca9de0479e562',
+#            license_paths=set())
 
-The license of the original project is included in the top level of
-the vendored project directory.
+# The license of the original project is included in the top level of
+# the vendored project directory.
 
-To regenerate, see sidecars/docnote_extract_testpkg_factory. The
-command is:
-``uv run python -m docnote_extract_testpkg_factory``.
+# To regenerate, see sidecars/docnote_extract_testpkg_factory. The
+# command is:
+# ``uv run python -m docnote_extract_testpkg_factory``.
 
-"""
 from __future__ import annotations
 from collections.abc import Callable
 from collections.abc import Sequence
