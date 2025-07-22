@@ -1,0 +1,33 @@
+> Import stubbing
+<
+
+``docnote_extract`` makes heavy use of import stubbing. This is partly for
+performance reasons, but it also allows us to do a number of tricks that, for
+example, allow us to automatically resolve type hints whose types are hidden
+behind ``if typing.TYPE_CHECKING:`` conditionals, while still maintaining the
+full dynamicism of the python import system (for better or for worse). This
+means, for example, that -- if your function signatures change based on
+``sys.platform`` or ``sys.version_info`` -- you can generate different
+versions of the documentation for each, by matching the extraction runtime to
+the desired condition. Of course you could also extract docs once, and add
+the version-specific information directly via ``Note``s -- that's up to you!
+
+> General config
+    
+    ++  must be enabled via ``install_import_hook``; can be removed via
+        ``uninstall_import_hook`` for post-processing docs
+    ++  bypass for individual modules via ``bypass_stubbing``
+
+> Gotchas
+
+    ++  imported metaclasses must be marked via ``use_metaclass_reftype``
+    ++  when uninstalling the import hook, all stubbed packages will be
+        removed from ``sys.modules``. We take care **not** to stub any
+        stdlib packages, so in theory this should always be safe. However,
+        if you run into stability issues with specific libraries after
+        uninstalling the import hook, you can add it to
+        ``UNPURGEABLE_MODULES``, which will cause the module to be reloaded
+        instead of removed. (The downside is that this is somewhat slower,
+        and unnecessary for the general case, which is why this isn't the
+        default behavior.)
+
