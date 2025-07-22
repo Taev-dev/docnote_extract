@@ -3,21 +3,6 @@ description: 'The build-time companion package to docnote'
 <
 
 
-> Thoughts: code samples for ``docnote_extract_testpkg``
-    Maybe I could pilfer something from typeshed?
-
-    Hmmm, no, those are too polished. But I could maybe write a custom
-    tool that constructs fake repos based on real ones, preserving the
-    original code but omitting the bodies.
-
-    If you go that route, you'll probably want to add in multiple
-    python libraries as subpackages, so that you can get a variety of
-    code styles and stuff.
-
-    You'd also need something that included ``docnote`` stuff. Which would
-    imply one of your own repos. ``finnr``?
-
-
 > Thoughts: docnote_extract
     Very first thing:
     ++  set ``typing.TYPE_CHECKING`` to true
