@@ -19,7 +19,7 @@ class TestInstallation:
 
         install_import_hook()
         try:
-            import docnote_extract_testpkg  # noqa: F401
+            import docnote_extract_testpkg  # noqa: PLC0415, RUF100, F401
             assert 'docnote_extract_testpkg' in sys.modules
 
         finally:
@@ -38,12 +38,12 @@ class TestInstallation:
 
         install_import_hook()
         try:
-            import docnote_extract_testpkg
+            import docnote_extract_testpkg  # noqa: PLC0415, RUF100
             assert is_reftyped(docnote_extract_testpkg)
 
         finally:
             uninstall_import_hook()
-        import docnote_extract_testpkg
+        import docnote_extract_testpkg  # noqa: PLC0415, RUF100
         assert not is_reftyped(docnote_extract_testpkg)
 
     def test_inspection_leaves_target_unstubbed(self):
@@ -60,7 +60,7 @@ class TestInstallation:
             with inspect_module(
                 'docnote_extract_testpkg._hand_rolled'
             ) as to_inspect:
-                import docnote_extract_testpkg._hand_rolled
+                import docnote_extract_testpkg._hand_rolled  # noqa: PLC0415, RUF100
                 assert to_inspect is docnote_extract_testpkg._hand_rolled
                 assert not is_reftyped(to_inspect)
                 assert to_inspect.SOME_CONSTANT == 7
