@@ -367,6 +367,9 @@ class _StubbingFinderLoader(Loader):
             # being extremely defensive here.
             for parent_module_name in parent_module_names:
                 sys.modules.pop(parent_module_name, None)
+            # Critical! Otherwise the loader will short-circuit with the
+            # temp module we just loaded.
+            sys.modules.pop(fullname, None)
 
             sys.modules.update(popped_modules)
 
@@ -445,3 +448,17 @@ def uninstall_import_hook():
                 importlib.reload(module_obj)
             else:
                 del sys.modules[module_to_remove]
+
+
+@contextmanager
+def stubbed_imports() -> Generator[None, None, None]:
+    """A contextmanager / decorator to temporarily apply the import
+    hook. Intended primarily for use in our own test code, but might
+    be useful for anyone wanting to create their own post-processing
+    system for extracted docs.
+    """
+    install_import_hook()
+    try:
+        yield
+    finally:
+        uninstall_import_hook()

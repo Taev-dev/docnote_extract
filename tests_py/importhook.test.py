@@ -206,10 +206,16 @@ class TestLoadStubMockingModule:
         as loader_state for a module currently being inspected.
         """
         loader = _StubbingFinderLoader()
-        with inspect_module('docnote_extract_testpkg'):
+        # We don't want to use inspect_module here because it has a bunch of
+        # side effects that we don't want to test. We strictly want to check
+        # the behavior of find_spec.
+        ctx_token = _MODULE_TO_INSPECT.set('docnote_extract_testpkg')
+        try:
             spec = loader.find_spec('docnote_extract_testpkg', None, None)
             assert spec is not None
             assert spec.loader_state is not None
+        finally:
+            _MODULE_TO_INSPECT.reset(ctx_token)
 
     def test_find_spec_for_stubbable(self):
         """find_spec() must return a ModuleSpec with loader_state=None
