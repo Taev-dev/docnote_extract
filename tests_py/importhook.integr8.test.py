@@ -18,7 +18,7 @@ class TestInstallation:
         modules from sys.modules.
         """
         with stubbed_imports():
-            import docnote_extract_testpkg  # noqa: PLC0415, RUF100, F401
+            import docnote_extract_testpkg  # noqa: F401
             assert 'docnote_extract_testpkg' in sys.modules
 
         assert 'docnote_extract_testpkg' not in sys.modules
@@ -33,10 +33,10 @@ class TestInstallation:
         returned.
         """
         with stubbed_imports():
-            import docnote_extract_testpkg  # noqa: PLC0415, RUF100
+            import docnote_extract_testpkg
             assert is_reftyped(docnote_extract_testpkg)
 
-        import docnote_extract_testpkg  # noqa: PLC0415, RUF100
+        import docnote_extract_testpkg
         assert not is_reftyped(docnote_extract_testpkg)
 
     @purge_cached_testpkg_modules
@@ -49,7 +49,7 @@ class TestInstallation:
         with stubbed_imports(), inspect_module(
             'docnote_extract_testpkg._hand_rolled'
         ) as to_inspect:
-            import docnote_extract_testpkg._hand_rolled  # noqa: PLC0415, RUF100
+            import docnote_extract_testpkg._hand_rolled
             assert to_inspect is docnote_extract_testpkg._hand_rolled
             assert not is_reftyped(to_inspect)
             assert to_inspect.SOME_CONSTANT == 7

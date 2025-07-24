@@ -115,7 +115,7 @@ sidecars = [
 max-args = 7
 
 [tool.ruff.lint.per-file-ignores]
-"tests_py/**" = ["S101", "PLR2004", "N999"]
+"tests_py/**" = ["S101", "PLR2004", "N999", "PLC0415"]
 
 [tool.pyright]
 # See https://github.com/microsoft/pyright/blob/main/docs/configuration.md
