@@ -233,8 +233,7 @@ class TestStubbedGetattr:
         """Must return a metaclass reftype for any module:attr in the
         shared metaclass markers lookup.
         """
-        retval = _stubbed_getattr(
-            module_name='configatron', attr_name='ConfigMeta')
+        retval = _stubbed_getattr(module_name='configatron', name='ConfigMeta')
         assert isinstance(retval, type)
         assert issubclass(retval, type)
         assert not issubclass(retval, ReftypeMixin)
@@ -247,8 +246,7 @@ class TestStubbedGetattr:
         manual metaclass markers lookup.
         """
         with use_metaclass_reftype('foo:Foo'):
-            retval = _stubbed_getattr(
-                module_name='foo', attr_name='Foo')
+            retval = _stubbed_getattr(module_name='foo', name='Foo')
         assert isinstance(retval, type)
         assert issubclass(retval, type)
         assert not issubclass(retval, ReftypeMixin)
@@ -260,8 +258,7 @@ class TestStubbedGetattr:
         """Must return a normal reftype for anything not marked as a
         metaclass.
         """
-        retval = _stubbed_getattr(
-            module_name='foo', attr_name='Foo')
+        retval = _stubbed_getattr(module_name='foo', name='Foo')
         assert isinstance(retval, type)
         assert not issubclass(retval, type)
         assert issubclass(retval, ReftypeMixin)

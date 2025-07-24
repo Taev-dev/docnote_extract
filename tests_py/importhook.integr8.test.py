@@ -3,7 +3,10 @@ import sys
 from docnote_extract._reftypes import has_reftyped_base
 from docnote_extract._reftypes import has_reftyped_metaclass
 from docnote_extract._reftypes import is_reftyped
+from docnote_extract.import_hook import bypass_stubbing
+from docnote_extract.import_hook import get_tracking_registry_snapshot
 from docnote_extract.import_hook import inspect_module
+from docnote_extract.import_hook import is_wrapped_tracking_module
 from docnote_extract.import_hook import stubbed_imports
 from docnote_extract.import_hook import use_metaclass_reftype
 
@@ -94,3 +97,30 @@ class TestInstallation:
         ) as to_inspect:
             assert not is_reftyped(to_inspect)
             assert is_reftyped(to_inspect.SOME_CONSTANT)
+
+    @purge_cached_testpkg_modules
+    def test_tracking_imports(self):
+        """After installing the import hook and while inspecting a
+        module, imports from a module with ``bypass_stubbing`` active
+        must nonetheless be tracked.
+        """
+        with stubbed_imports(), bypass_stubbing(
+            'docnote_extract_testpkg._hand_rolled'
+        ), inspect_module(
+            'docnote_extract_testpkg._hand_rolled.imports_from_parent'
+        ) as to_inspect:
+            assert not is_reftyped(to_inspect)
+            assert not is_reftyped(to_inspect.SOME_CONSTANT)
+            assert not is_reftyped(to_inspect.RENAMED_SENTINEL)
+
+            registry = get_tracking_registry_snapshot()
+            assert id(to_inspect.RENAMED_SENTINEL) in registry
+            assert registry[id(to_inspect.RENAMED_SENTINEL)] == (
+                'docnote_extract_testpkg._hand_rolled',
+                'SOME_SENTINEL')
+
+            import docnote_extract_testpkg._hand_rolled as wrapped_src
+            assert is_wrapped_tracking_module(wrapped_src)
+            assert (
+                to_inspect.RENAMED_SENTINEL
+                is wrapped_src._docnote_extract_src_module.SOME_SENTINEL)

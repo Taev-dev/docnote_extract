@@ -9,11 +9,15 @@ from collections.abc import Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
+from dataclasses import field
 from functools import partial
 from importlib.abc import Loader
 from importlib.machinery import ModuleSpec
 from types import ModuleType
 from typing import Annotated
+from typing import Any
+from typing import Protocol
+from typing import TypeGuard
 from typing import cast
 
 from docnote import Note
@@ -21,6 +25,7 @@ from docnote import Note
 from docnote_extract._reftypes import RefMetadata
 from docnote_extract._reftypes import make_metaclass_reftype
 from docnote_extract._reftypes import make_reftype
+from docnote_extract._types import Singleton
 
 UNPURGEABLE_MODULES: Annotated[
         set[str],
@@ -43,6 +48,12 @@ _MANUAL_BYPASS_PACKAGES: ContextVar[frozenset[str]] = ContextVar(
 _MANUAL_METACLASS_MARKERS: ContextVar[frozenset[RefMetadata]] = ContextVar(
     '_MANUAL_METACLASS_MARKERS', default=frozenset())
 _MODULE_TO_INSPECT: ContextVar[str] = ContextVar('_MODULE_TO_INSPECT')
+
+_ALT_IMPORT_RECURSION_GUARD: ContextVar[frozenset[str]] = ContextVar(
+    '_ALT_IMPORT_RECURSION_GUARD', default=frozenset())
+_TRACKER_BYPASS_PACKAGES: ContextVar[frozenset[str]] = ContextVar(
+    '_TRACKER_BYPASS_PACKAGES', default=frozenset())
+
 logger = logging.getLogger(__name__)
 
 
@@ -75,11 +86,11 @@ def bypass_stubbing(*module_names: str):
     """
     stacked_bypass = frozenset({
         *_MANUAL_BYPASS_PACKAGES.get(), *module_names})
-    reset_token = _MANUAL_BYPASS_PACKAGES.set(stacked_bypass)
+    ctx_token = _MANUAL_BYPASS_PACKAGES.set(stacked_bypass)
     try:
         yield
     finally:
-        _MANUAL_BYPASS_PACKAGES.reset(reset_token)
+        _MANUAL_BYPASS_PACKAGES.reset(ctx_token)
 
 
 @contextmanager
@@ -106,11 +117,11 @@ def use_metaclass_reftype(*object_qualnames: str):
 
     stacked_markers = frozenset({
         *_MANUAL_METACLASS_MARKERS.get(), *refs})
-    reset_token = _MANUAL_METACLASS_MARKERS.set(stacked_markers)
+    ctx_token = _MANUAL_METACLASS_MARKERS.set(stacked_markers)
     try:
         yield
     finally:
-        _MANUAL_METACLASS_MARKERS.reset(reset_token)
+        _MANUAL_METACLASS_MARKERS.reset(ctx_token)
 
 
 @contextmanager
@@ -127,7 +138,7 @@ def inspect_module(module_name: str) -> Generator[ModuleType, None, None]:
         raise RuntimeError('inspect_module is not reentrant!', module_name)
     importlib.invalidate_caches()
 
-    reset_token = _MODULE_TO_INSPECT.set(module_name)
+    ctx_token = _MODULE_TO_INSPECT.set(module_name)
     try:
         # This means we have a hooked/stubbed version of the library already
         # present, and we need to reload it.
@@ -164,17 +175,19 @@ def inspect_module(module_name: str) -> Generator[ModuleType, None, None]:
                 del sys.modules[module_name]
 
     finally:
-        _MODULE_TO_INSPECT.reset(reset_token)
+        _MODULE_TO_INSPECT.reset(ctx_token)
 
 
 class _StubbingFinderLoader(Loader):
-    """This is an import loader that creates a normal module object and
-    populates its __getattr__ with a function that simply returns a
-    Mock object.
+    """This is an import finder/loader that creates a normal module
+    object and populates its __getattr__ with a function that simply
+    returns a mock-style object.
 
     This is useful to be able to use importlib.import_library on a
     source file without having any of its upstream dependencies
-    installed.
+    installed. It also helps us keep track of the object provenance,
+    making it easier to figure out exactly which objects were defined in
+    which modules, even if they lack a __module__ attribute.
     """
     stubbed_modules: set[str]
 
@@ -195,15 +208,24 @@ class _StubbingFinderLoader(Loader):
         in_stdlib = None
         in_3p_bypass = None
         in_manual_bypass = None
+        in_recursion_guard = None
+        # Note: keep this in sync with is_stubbed!
         if (
+            # Note that base_package is correct here; sys.stdlib_module_names
+            # only includes the toplevel package
             (in_stdlib := base_package in sys.stdlib_module_names)
             or (in_3p_bypass := base_package in _THIRDPARTY_BYPASS_PACKAGES)
             or (in_manual_bypass := fullname in _MANUAL_BYPASS_PACKAGES.get())
+            or (
+                in_recursion_guard :=
+                    fullname in _ALT_IMPORT_RECURSION_GUARD.get())
         ):
             logger.debug(
                 'Bypassing stub for module %s. (in_stdlib: %s, '
-                + 'in_3p_bypass: %s, in_manual_bypass: %s)',
-                fullname, in_stdlib, in_3p_bypass, in_manual_bypass)
+                + 'in_3p_bypass: %s, in_manual_bypass: %s, '
+                + 'in_recursion_guard: %s)',
+                fullname, in_stdlib, in_3p_bypass, in_manual_bypass,
+                in_recursion_guard)
             return None
 
         # This is how we bypass our loader for individual modules that we want
@@ -293,9 +315,9 @@ class _StubbingFinderLoader(Loader):
 
         else:
             logger.debug('Stubbing module: %s', module.__name__)
-            module.__dict__['__getattr__'] = partial(
+            module.__getattr__ = partial(
                 _stubbed_getattr, module_name=module.__name__)
-            module.__dict__['__path__'] = []
+            module.__path__ = []
 
     def _find_alt_spec(
             self,
@@ -345,7 +367,7 @@ class _StubbingFinderLoader(Loader):
                     parent_module_name)
 
         try:
-            with bypass_stubbing(*parent_module_names, fullname):
+            with _alt_import_recursion_guard(*parent_module_names, fullname):
                 alt_loaded_module = importlib.import_module(fullname)
 
             alt_spec = alt_loaded_module.__spec__
@@ -374,6 +396,246 @@ class _StubbingFinderLoader(Loader):
             sys.modules.update(popped_modules)
 
 
+class _WrapWithTrackerFinderLoader(Loader):
+    """This is an import finder/loader that first allows the rest of the
+    finder/loaders to load a module, and then wraps the resulting module
+    object in an intermediate that tracks the ID of every object
+    imported from every wrapped module, and then returns the original
+    object.
+
+    This allows us to keep track of where, exactly, objects were
+    imported from (which is not necessarily the same as where they were
+    defined!), even if they were not stubbed.
+
+    The only exception here is the stdlib, because this relies upon us
+    being able to manipulate sys.modules relatively freely, which can't
+    be done with the stdlib without causing stability issues.
+    """
+    # This is a sort of... parallel version of sys.modules. In addition to the
+    # purging when uninstalling the import hook (via the keys), this also
+    # allows us to avoid having a bazillion copies of the alt modules. NOTE
+    # THAT THE VALUES ARE NOT WRAPPED! These are the original, unwrapped
+    # modules, hot-off-the-press.
+    wrapped_alt_modules: dict[str, _WrappedTrackingModule]
+    # This, meanwhile, is the thing responsible for keeping track of the
+    # actual imports. The format is module_fullname, attr_name. If None,
+    # that means that it encountered multiple DIFFERENT source for the object
+    # ID, and therefore, it can't be used to determine provenance anymore.
+    registry: dict[int, tuple[str, str] | None]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.wrapped_alt_modules = {}
+        self.registry = {}
+
+    def find_spec(
+            self,
+            fullname: str,
+            path: Sequence[str] | None,
+            target: ModuleType | None = None
+            ) -> ModuleSpec | None:
+        """We use find_spec to filter which packages we're going to
+        install the import hook for, and which we aren't.
+        """
+        base_package, *_ = fullname.split('.')
+
+        if base_package in sys.stdlib_module_names:
+            logger.debug(
+                'Bypassing tracker wrapping for stdlib module %s.', fullname)
+            return None
+
+        if base_package in _THIRDPARTY_BYPASS_PACKAGES:
+            logger.debug(
+                'Bypassing tracker wrapping for %s via hard-coded third party '
+                + 'bypass package %s',
+                fullname, base_package)
+            return None
+
+        if fullname in _TRACKER_BYPASS_PACKAGES.get():
+            logger.debug(
+                'Bypassing tracker wrapping via context for %s.', fullname)
+            return None
+
+        # We can always skip these, since this will only be a temporary module
+        # for the purposes of calculating a spec.
+        if fullname in _ALT_IMPORT_RECURSION_GUARD.get():
+            logger.debug(
+                'Bypassing tracker wrapping via recursion guard for %s.',
+                fullname)
+            return None
+
+        alt_spec = self._find_alt_spec(fullname, path, target)
+
+        if alt_spec is None:
+            logger.warning(
+                'No alt spec for wrapped module (%s). Reverting to '
+                + 'other loaders.', fullname)
+            return None
+
+        else:
+            return ModuleSpec(
+                fullname,
+                self,
+                loader_state=alt_spec)
+
+    def _find_alt_spec(
+            self,
+            fullname: str,
+            path: Sequence[str] | None,
+            target: ModuleType | None = None
+            ) -> _DelegatedLoaderState | None:
+        """This is very similar to the stubber's _find_alt_spec. The
+        primary difference is that we keep track of all of the original
+        module objects instead of discarding them. This ensures that we
+        have a consistent set of modules (and therefore a consistent
+        set of objects), which makes sure that their IDs are also,
+        therefore, consistent.
+        """
+        # First of all, we want to patch all of the parent modules outside of
+        # sys.modules. This appears to interfere with discovery otherwise.
+        popped_modules = {}
+        module_segments = fullname.split('.')
+
+        parent_modules = [
+            '.'.join(module_segments[:index + 1])
+            for index in range(len(module_segments) - 1)]
+        modules_to_swap = {*parent_modules}
+        modules_to_swap.update(self.wrapped_alt_modules)
+
+        for module_to_swap in modules_to_swap:
+            if module_to_swap in sys.modules:
+                popped_modules[module_to_swap] = sys.modules.pop(
+                    module_to_swap)
+
+            if module_to_swap in self.wrapped_alt_modules:
+                sys.modules[module_to_swap] = self.wrapped_alt_modules[
+                    module_to_swap]
+
+        try:
+            with _alt_import_recursion_guard(*modules_to_swap, fullname):
+                alt_loaded_module = importlib.import_module(fullname)
+
+            alt_spec = alt_loaded_module.__spec__
+            if alt_spec is None or alt_spec.loader is None:
+                return None
+
+            else:
+                return _DelegatedLoaderState(
+                    fullname=fullname,
+                    alt_loader=alt_spec.loader,
+                    alt_spec=alt_spec)
+
+        finally:
+            # Note that we might have added more of these in the meantime,
+            # if there were other imports of wrapped modules while importing
+            # the alt versions
+            modules_to_unswap = {*parent_modules}
+            modules_to_unswap.update(self.wrapped_alt_modules)
+            for module_to_unswap in modules_to_unswap:
+                sys.modules.pop(module_to_unswap, None)
+            # Critical! Otherwise the loader will short-circuit with the
+            # temp module we just loaded.
+            sys.modules.pop(fullname, None)
+
+            sys.modules.update(popped_modules)
+
+    def create_module(self, spec: ModuleSpec) -> None | ModuleType:
+        """We have to do a little bit of black magic here; we need to
+        keep the alt loader's version of the module, and it needs to be
+        the thing that actually gets exec'd by the alt loader. However,
+        we simultaneously need to have importlib construct a separate
+        module object for us to use as the proxying module.
+        """
+        if spec.loader_state is None:
+            logger.warning(
+                'Missing loader state for wrapped module; will break!: %s',
+                spec.name)
+            return None
+
+        else:
+            delegated_state = cast(_DelegatedLoaderState, spec.loader_state)
+            alt_module = delegated_state.alt_loader.create_module(
+                spec.loader_state)
+
+            if alt_module is None:
+                logger.debug(
+                    'Using default module machinery for delegated wrapped '
+                    + 'module: %s', spec.name)
+                alt_module = ModuleType(spec.name)
+                alt_module.__name__ = spec.name
+                alt_module.__loader__ = spec.loader_state.alt_loader
+                alt_module.__spec__ = spec
+
+        spec.loader_state.alt_module = alt_module
+        return None
+
+    def exec_module(self, module: ModuleType):
+        """Here, we first have the alt loader finalize the real version
+        of the module, using all of the alt values on the loader state.
+        Then, we wrap that into our own module object, setting both the
+        canonical module as a private attribute there, as well as the
+        getattr method that is responsible for tracking anything
+        accessing members of the module.
+        """
+        spec = getattr(module, '__spec__', None)
+        if (
+            spec is None
+            or not isinstance(spec.loader_state, _DelegatedLoaderState)
+        ):
+            logger.warning(
+                'Missing spec for wrapped module during exec; will break! %s',
+                module.__name__)
+            return
+
+        alt_module = spec.loader_state.alt_module
+        spec.loader_state.alt_loader.exec_module(alt_module)
+        logger.debug('Wrapping module w/ tracking proxy: %s', module.__name__)
+        module.__getattr__ = partial(
+            _wrapped_tracking_getattr,
+            module_name=module.__name__,
+            registry=self.registry,
+            src_module=alt_module)
+        module.__path__ = []
+        # The ignore here is so we can set the attr value without pyright
+        # complaining. After that, we can use the typeguard.
+        module._docnote_extract_src_module = alt_module  # type: ignore
+
+
+def _wrapped_tracking_getattr(
+        name: str,
+        *,
+        module_name: str,
+        registry: dict[int, tuple[str, str] | None],
+        src_module: ModuleType
+        ) -> Any:
+    """Okay, yes, we could create our own module type. Alternatively,
+    we could just inject a module.__getattr__!
+
+    This returns the original object from the src_module, but before
+    doing so, it records the module name and attribute name within
+    the registry.
+
+    If we encounter a repeated import of the same object, but with a
+    different source, then we overwrite the registry value with None to
+    indicate that we no longer know definitively where the object came
+    from.
+    """
+    src_object = getattr(src_module, name)
+    obj_id = id(src_object)
+    tracked_src = (module_name, name)
+
+    existing_record = registry.get(obj_id, Singleton.MISSING)
+    if existing_record is Singleton.MISSING:
+        registry[obj_id] = tracked_src
+
+    # Note: we only need to overwrite if it isn't already none; otherwise we
+    # can just skip it. None is a sink state, a black hole.
+    elif existing_record is not None and existing_record != tracked_src:
+        registry[obj_id] = None
+
+    return src_object
+
+
 @dataclass(slots=True)
 class _DelegatedLoaderState:
     """We use this partly as a container for ``loader_state``, and
@@ -383,14 +645,19 @@ class _DelegatedLoaderState:
     fullname: str
     alt_loader: Loader
     alt_spec: ModuleSpec
+    alt_module: ModuleType = field(init=False)
 
 
-def _stubbed_getattr(attr_name: str, *, module_name: str):
+def _stubbed_getattr(name: str, *, module_name: str):
     """Okay, yes, we could create our own module type. Alternatively,
     we could just inject a module.__getattr__!
+
+    This replaces every attribute access (regardless of whether or not
+    it exists on the true source module; we're relying upon type
+    checkers to ensure that) with a reftype.
     """
     to_reference = RefMetadata(
-        module=module_name, name=attr_name, traversals=())
+        module=module_name, name=name, traversals=())
 
     in_shared_markers = None
     in_manual_markers = None
@@ -403,11 +670,11 @@ def _stubbed_getattr(attr_name: str, *, module_name: str):
             'Returning metaclass reftype for %s. (in_shared_markers: %s, '
             + 'in_manual_markers: %s)',
             to_reference, in_shared_markers, in_manual_markers)
-        return make_metaclass_reftype(module=module_name, name=attr_name)
+        return make_metaclass_reftype(module=module_name, name=name)
 
     else:
         logger.debug('Returning normal reftype for %s', to_reference)
-        return make_reftype(module=module_name, name=attr_name)
+        return make_reftype(module=module_name, name=name)
 
 
 def install_import_hook():
@@ -415,6 +682,11 @@ def install_import_hook():
     # to context managers, and limit context managers to advanced usage (eg
     # testing)
     importlib.invalidate_caches()
+    # A bit suboptimal that we need to completely re-index the list twice in
+    # a row, but whatever. Note that the order here is important; we need the
+    # stubber ahead of the tracker, so we do the tracker first and then
+    # the stubber, so the stubber bumps the tracker out of first place.
+    sys.meta_path.insert(0, _WrapWithTrackerFinderLoader())
     sys.meta_path.insert(0, _StubbingFinderLoader())
 
 
@@ -431,15 +703,23 @@ def uninstall_import_hook():
     """
     target_indices = []
     for index, meta_path_finder in enumerate(sys.meta_path):
-        if isinstance(meta_path_finder, _StubbingFinderLoader):
+        if isinstance(
+            meta_path_finder,
+            (_StubbingFinderLoader, _WrapWithTrackerFinderLoader)
+        ):
             target_indices.append(index)
 
     modules_to_remove: set[str] = set()
     # By reversing, we don't need to worry about offsets from deleting stuff
     for index in reversed(target_indices):
         meta_path_finder = cast(
-            _StubbingFinderLoader, sys.meta_path.pop(index))
-        modules_to_remove.update(meta_path_finder.stubbed_modules)
+            _StubbingFinderLoader | _WrapWithTrackerFinderLoader,
+            sys.meta_path.pop(index))
+
+        if isinstance(meta_path_finder, _StubbingFinderLoader):
+            modules_to_remove.update(meta_path_finder.stubbed_modules)
+        else:
+            modules_to_remove.update(meta_path_finder.wrapped_alt_modules)
 
     for module_to_remove in modules_to_remove:
         module_obj = sys.modules.get(module_to_remove)
@@ -462,3 +742,67 @@ def stubbed_imports() -> Generator[None, None, None]:
         yield
     finally:
         uninstall_import_hook()
+
+
+def is_stubbed(module_name: str) -> bool:
+    """Returns True if the passed module is stubbed (presuming the
+    import hook is active; otherwise, it returns True if the passed
+    module ^^would be^^ stubbed, provided the import hook were
+    subsequently activated).
+    """
+    root_package_name, _, _ = module_name.partition('.')
+    return not (
+        root_package_name in sys.stdlib_module_names
+        or root_package_name in _THIRDPARTY_BYPASS_PACKAGES
+        or module_name in _MANUAL_BYPASS_PACKAGES.get()
+        or module_name == _MODULE_TO_INSPECT.get(None))
+
+
+@contextmanager
+def _alt_import_recursion_guard(*module_names):
+    """We use this while getting the alt spec for the module to inspect,
+    to prevent infinite recursion while loading the real-fake version of
+    the module (and its parents).
+    """
+    stacked_bypass = frozenset({
+        *_ALT_IMPORT_RECURSION_GUARD.get(), *module_names})
+    ctx_token = _ALT_IMPORT_RECURSION_GUARD.set(stacked_bypass)
+    try:
+        yield
+    finally:
+        _ALT_IMPORT_RECURSION_GUARD.reset(ctx_token)
+
+
+def get_tracking_registry_snapshot() -> dict[int, tuple[str, str] | None]:
+    """Retrieves a snapshto of the tracking registry from any installed
+    _WrapWithTrackerFinderLoader instances.
+    """
+    retval = {}
+    for meta_path_finder in sys.meta_path:
+        if isinstance(meta_path_finder, _WrapWithTrackerFinderLoader):
+            if retval:
+                raise RuntimeError(
+                    'Multiple tracking registries not supported')
+
+            retval.update(meta_path_finder.registry)
+    return retval
+
+
+def is_wrapped_tracking_module(
+        module: ModuleType
+        ) -> TypeGuard[_WrappedTrackingModule]:
+    return (
+        isinstance(module, ModuleType)
+        and hasattr(module, '_docnote_extract_src_module'))
+
+
+class _WrappedTrackingModuleBase(Protocol):
+    _docnote_extract_src_module: ModuleType
+
+
+class _WrappedTrackingModule(ModuleType, _WrappedTrackingModuleBase):
+    """This is really just intended for use as a pseudo-protocol, since
+    protocols can't inherit from concrete base classes, but we need
+    something that's the intersection between a moduletype and a
+    _WrappedTrackingModuleBase.
+    """

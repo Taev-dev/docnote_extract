@@ -1,6 +1,12 @@
 import sys
+from collections.abc import Callable
+from typing import overload
 
 
+@overload
+def purge_cached_testpkg_modules() -> None: ...
+@overload
+def purge_cached_testpkg_modules[T: Callable](func: T, /) -> T: ...
 def purge_cached_testpkg_modules(func=None, /):
     """Use this to remove every testpkg module from sys.modules.
     Manually applied to tests for performance reasons.
