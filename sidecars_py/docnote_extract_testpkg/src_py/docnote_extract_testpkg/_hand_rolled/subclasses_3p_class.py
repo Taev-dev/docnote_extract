@@ -1,7 +1,7 @@
 """We use this module to test that the import hook works correctly for
 modules that inherit from third-party classes.
 """
-from example import ThirdpartyBaseclass
+from docnote_extract_testutils.for_handrolled import ThirdpartyBaseclass
 
 
 # Note that even just inheriting from a base might imply a metaclass with
