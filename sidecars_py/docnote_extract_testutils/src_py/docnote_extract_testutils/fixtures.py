@@ -1,6 +1,11 @@
 import sys
 from collections.abc import Callable
+from contextlib import contextmanager
 from typing import overload
+
+from docnote_extract._extraction import _EXTRACTION_PHASE
+from docnote_extract._extraction import _MODULE_TO_INSPECT
+from docnote_extract._extraction import _ExtractionPhase
 
 
 @overload
@@ -32,3 +37,21 @@ def _do_purge_cached_testpkg_modules():
         # We don't have threading, so the None should be redundant, but we
         # want to be defensive here.
         sys.modules.pop(cached_testpkg_module, None)
+
+
+@contextmanager
+def set_phase(phase: _ExtractionPhase):
+    ctx_token = _EXTRACTION_PHASE.set(phase)
+    try:
+        yield
+    finally:
+        _EXTRACTION_PHASE.reset(ctx_token)
+
+
+@contextmanager
+def set_inspection(module: str):
+    ctx_token = _MODULE_TO_INSPECT.set(module)
+    try:
+        yield
+    finally:
+        _MODULE_TO_INSPECT.reset(ctx_token)

@@ -9,14 +9,17 @@ from typing import Literal
 from typing import get_origin
 from typing import get_type_hints
 
+from docnote_extract._extraction import ModulePostExtraction
+from docnote_extract._extraction import TrackingRegistry
 from docnote_extract._reftypes import is_reftyped
 from docnote_extract._types import Singleton
-from docnote_extract.import_hook import get_tracking_registry_snapshot
 
 logger = logging.getLogger(__name__)
 
 
-def normalize_module_dict(module: ModuleType) -> dict[str, NormalizedObj]:
+def normalize_module_dict(
+        module: ModulePostExtraction
+        ) -> dict[str, NormalizedObj]:
     from_annotations: dict[str, Any] = get_type_hints(
         module, include_extras=True)
     dunder_all: set[str] = set(getattr(module, '__all__', ()))
@@ -26,6 +29,7 @@ def normalize_module_dict(module: ModuleType) -> dict[str, NormalizedObj]:
         canonical_module, canonical_name = _get_or_infer_canonical_origin(
             name,
             obj,
+            tracking_registry=module._docnote_extract_import_tracking_registry,
             containing_module=module.__name__,
             containing_dunder_all=dunder_all,
             containing_annotation_names=set(from_annotations))
@@ -58,6 +62,7 @@ def _get_or_infer_canonical_origin(
         name_in_containing_module: str,
         obj: Any,
         *,
+        tracking_registry: TrackingRegistry,
         containing_module: str,
         containing_dunder_all: set[str],
         containing_annotation_names: set[str]
@@ -88,8 +93,7 @@ def _get_or_infer_canonical_origin(
     # the import location to be canonical, and would prefer to have that rather
     # than the definition location, which is what we would get from
     # ``__module__`` and ``__name__`.
-    registry_snapshot = get_tracking_registry_snapshot()
-    canonical_from_registry = registry_snapshot.get(id(obj), None)
+    canonical_from_registry = tracking_registry.get(id(obj), None)
     # Note that the None could be coming EITHER from the default in the above
     # .get(), OR because we had multiple conflicting references to it, and we
     # therefore can't use the registry to infer its location.

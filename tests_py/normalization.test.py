@@ -1,3 +1,7 @@
+from importlib import import_module
+from typing import cast
+
+from docnote_extract._extraction import ModulePostExtraction
 from docnote_extract._types import Singleton
 from docnote_extract.normalization import NormalizedObj
 from docnote_extract.normalization import normalize_module_dict
@@ -18,9 +22,13 @@ class TestNormalizeModuleMembers:
         """All returned objects must be _NormaliezdObj instances. The
         entire module dict must be returned in the normalized output.
         """
-        from docnote_extract_testpkg.taevcode import docnote
+        docnote = cast(
+            ModulePostExtraction,
+            import_module('docnote_extract_testpkg.taevcode.docnote'))
+        docnote._docnote_extract_import_tracking_registry = {}
 
         normalized = normalize_module_dict(docnote)
+
         assert all(
             isinstance(obj, NormalizedObj) for obj in normalized.values())
         assert set(normalized) == set(docnote.__dict__)
@@ -30,9 +38,13 @@ class TestNormalizeModuleMembers:
         """A class defined within the current module must be assigned
         the correct canonical origin.
         """
-        from docnote_extract_testpkg.taevcode import docnote
+        docnote = cast(
+            ModulePostExtraction,
+            import_module('docnote_extract_testpkg.taevcode.docnote'))
+        docnote._docnote_extract_import_tracking_registry = {}
 
         normalized = normalize_module_dict(docnote)
+
         norm_note = normalized['Note']
         assert not norm_note.annotations
         assert norm_note.type_ is Singleton.MISSING
