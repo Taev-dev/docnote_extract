@@ -8,6 +8,7 @@ import typing
 from dataclasses import KW_ONLY
 from dataclasses import dataclass
 from dataclasses import field
+from dataclasses import fields as dc_fields
 from importlib import import_module
 from pkgutil import walk_packages
 from types import ModuleType
@@ -147,6 +148,18 @@ class ModuleTreeNode[TN: ModuleTreeNode, TM: ModulePostExtraction | None]:
                 raise exc
 
         return node
+
+    def clone_without_children(self) -> Self:
+        """Creates a copy of the current node, except without any
+        children. Useful when you need to create a copy of the tree
+        while filtering some children out.
+        """
+        params = {}
+        for field_obj in dc_fields(self):
+            if field_obj.name != 'children':
+                params[field_obj.name] = getattr(self, field_obj.name)
+
+        return type(self)(**params)
 
     def flatten(
             self,

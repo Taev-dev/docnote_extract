@@ -135,3 +135,27 @@ class TestModuleTreeNode:
             retval.update(root_node.flatten())
 
         assert retval == fake_extraction
+
+    def test_clone_without_children(self):
+        """Cloning a node without its children must not include its
+        children (... no shit, sherlock), but must preserve everything
+        else.
+        """
+        tree = ModuleTreeNode(
+            'foo',
+            'foo',
+            {'bar': ModuleTreeNode(
+                'foo.bar',
+                'bar',
+                {'baz': ModuleTreeNode(
+                    'foo.bar.baz',
+                    'baz',
+                    effective_config=DocnoteConfig())},
+                effective_config=DocnoteConfig())},
+            effective_config=DocnoteConfig(markup_lang='cleancopy'))
+
+        clone = tree.clone_without_children()
+        assert not clone.children
+        assert clone != tree
+        tree.children.clear()
+        assert clone == tree
