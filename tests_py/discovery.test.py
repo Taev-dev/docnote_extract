@@ -34,7 +34,8 @@ class TestEagerImportSubmodules:
             'docnote_extract_testpkg._hand_rolled.child2.some_sibling',
             'docnote_extract_testpkg._hand_rolled.imports_3p_metaclass',
             'docnote_extract_testpkg._hand_rolled.imports_from_parent',
-            'docnote_extract_testpkg._hand_rolled.subclasses_3p_class'}
+            'docnote_extract_testpkg._hand_rolled.subclasses_3p_class',
+            'docnote_extract_testpkg._hand_rolled.noteworthy',}
 
 
 class TestModuleTreeNode:

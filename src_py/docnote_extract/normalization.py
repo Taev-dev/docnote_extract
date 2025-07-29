@@ -9,6 +9,10 @@ from typing import Literal
 from typing import get_origin
 from typing import get_type_hints
 
+from docnote import DocnoteConfig
+from docnote import DocnoteConfigParams
+from docnote import Note
+
 from docnote_extract._extraction import ModulePostExtraction
 from docnote_extract._extraction import TrackingRegistry
 from docnote_extract._reftypes import is_reftyped
@@ -37,20 +41,35 @@ def normalize_module_dict(
         raw_annotation = from_annotations.get(
             name, Singleton.MISSING)
         if raw_annotation is Singleton.MISSING:
-            annotations = ()
+            all_annotations = ()
             type_ = raw_annotation
         else:
             origin = get_origin(raw_annotation)
             if origin is Annotated:
                 type_ = raw_annotation.__origin__
-                annotations = raw_annotation.__metadata__
+                all_annotations = raw_annotation.__metadata__
             else:
                 type_ = raw_annotation
-                annotations = ()
+                all_annotations = ()
+
+        config_params: DocnoteConfigParams = {}
+        notes: list[Note] = []
+        external_annotations = []
+        for annotation in all_annotations:
+            if isinstance(annotation, Note):
+                notes.append(annotation)
+                if annotation.config is not None:
+                    config_params.update(annotation.config.as_nontotal_dict())
+            elif isinstance(annotation, DocnoteConfig):
+                config_params.update(annotation.as_nontotal_dict())
+            else:
+                external_annotations.append(annotation)
 
         retval[name] = NormalizedObj(
             obj_or_stub=obj,
-            annotations=annotations,
+            annotations=tuple(external_annotations),
+            config=DocnoteConfig(**config_params),
+            notes=tuple(notes),
             type_=type_,
             canonical_module=canonical_module,
             canonical_name=canonical_name)
@@ -128,9 +147,27 @@ class NormalizedObj:
     (from ``Annotated``), as well as the unpacked-from-``Annotated``
     type itself.
     """
-    obj_or_stub: Any
+    obj_or_stub: Annotated[
+            Any,
+            Note('''This is the actual runtime value of the object. It might
+                be a ``RefType`` stub or an actual object.''')]
+    notes: tuple[Note, ...]
+    config: Annotated[
+            DocnoteConfig,
+            Note('''This contains the end result of all direct configs on the
+                object. It does not, however, merge in any config values from
+                parent scopes. Therefore, this must be combined with the
+                stackables in parent scopes to result in the final effective
+                config for the object.''')]
     annotations: tuple[Any, ...]
-    type_: Any | Literal[Singleton.MISSING]
+    type_: Annotated[
+            Any | Literal[Singleton.MISSING],
+            Note('''This might be a literal value, as is the case with
+                builtins and nostub modules. It might also be a ``RefType``
+                stub. Or it could be some combination thereof, depending on
+                how the nostub import cascade plays out.
+
+                Or, of course, it could just be missing!''')]
 
     # Where the value was declared. String if known (because it had a
     # __module__ or it had a docnote). None if not applicable, because the

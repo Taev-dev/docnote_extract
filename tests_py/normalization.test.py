@@ -1,5 +1,9 @@
+from collections.abc import Callable
 from importlib import import_module
 from typing import cast
+
+from docnote import DocnoteConfig
+from docnote import Note
 
 from docnote_extract._extraction import ModulePostExtraction
 from docnote_extract._types import Singleton
@@ -51,3 +55,43 @@ class TestNormalizeModuleMembers:
         assert norm_note.canonical_module == \
             'docnote_extract_testpkg.taevcode.docnote'
         assert norm_note.canonical_name == 'Note'
+
+    @purge_cached_testpkg_modules
+    def test_notes(self):
+        """A value defined within the module that contains a ``Note``
+        annotation must include it within the normalize object's note
+        attribute.
+        """
+        test_module = cast(
+            ModulePostExtraction,
+            import_module('docnote_extract_testpkg._hand_rolled.noteworthy'))
+        test_module._docnote_extract_import_tracking_registry = {}
+
+        normalized = normalize_module_dict(test_module)
+
+        norm_cfg_attr = normalized['DOCNOTE_CONFIG_ATTR']
+        assert not norm_cfg_attr.annotations
+        assert norm_cfg_attr.type_ is str
+        assert len(norm_cfg_attr.notes) == 1
+        note, = norm_cfg_attr.notes
+        assert note.value.startswith('Docs generation libraries should use ')
+        assert norm_cfg_attr.config == DocnoteConfig()
+
+    @purge_cached_testpkg_modules
+    def test_configs(self):
+        """A value defined within the module that contains a ``Note``
+        annotation must include it within the normalize object's note
+        attribute.
+        """
+        test_module = cast(
+            ModulePostExtraction,
+            import_module('docnote_extract_testpkg._hand_rolled.noteworthy'))
+        test_module._docnote_extract_import_tracking_registry = {}
+
+        normalized = normalize_module_dict(test_module)
+
+        clcnote_attr = normalized['ClcNote']
+        assert not clcnote_attr.annotations
+        assert clcnote_attr.type_ == Callable[[str], Note]
+        assert not clcnote_attr.notes
+        assert clcnote_attr.config == DocnoteConfig(include_in_docs=False)
