@@ -4,16 +4,24 @@ packages to recursively find all their modules.
 from __future__ import annotations
 
 import logging
+import typing
 from dataclasses import KW_ONLY
 from dataclasses import dataclass
 from dataclasses import field
 from importlib import import_module
 from pkgutil import walk_packages
 from types import ModuleType
+from typing import Self
 
 from docnote import DocnoteConfig
+from docnote import DocnoteConfigParams
+
+if typing.TYPE_CHECKING:
+    from docnote_extract._extraction import ModulePostExtraction
 
 logger = logging.getLogger(__name__)
+
+MODULE_DOCNOTE_CONFIG_ATTR = 'DOCNOTE_CONFIG'
 
 
 def discover_all_modules(
@@ -101,7 +109,7 @@ def eager_import_submodules(
 
 
 @dataclass(slots=True)
-class ModuleTreeNode:
+class ModuleTreeNode[TN: ModuleTreeNode, TM: ModulePostExtraction | None]:
     """Module trees represent the hierarchy of modules within a package.
     In addition to the module names themselves (and if desired, the
     module objects), they include the effective docnote config for
@@ -109,13 +117,15 @@ class ModuleTreeNode:
     """
     fullname: str
     relname: str
-    children: dict[str, ModuleTreeNode] = field(default_factory=dict)
+    children: dict[str, Self] = field(default_factory=dict)
 
     _: KW_ONLY
     effective_config: DocnoteConfig = field(compare=False, repr=False)
-    module: ModuleType | None = field(default=None, compare=False, repr=False)
+    # Pyright appears to have a bug with the generic None not matching the
+    # explicit None in the default
+    module: TM = field(default=None, compare=False, repr=False)  # type: ignore
 
-    def find(self, name: str):
+    def find(self, name: str) -> Self:
         """Finds the node associated with the passed module name.
         Intended to be used from the module root, with absolute names,
         but also generally usable to traverse into child nodes.
@@ -137,3 +147,89 @@ class ModuleTreeNode:
                 raise exc
 
         return node
+
+    @classmethod
+    def from_extraction(
+            cls,
+            extraction: dict[str, ModulePostExtraction]
+            ) -> dict[str, ModuleTreeNodeHydrated]:
+        """Given the results of
+        ``_ExtractionFinderLoader.discover_and_extract`` -- namely, a
+        dict of ``{module_fullname: ModulePostExtraction}`` -- construct
+        a new ``ModuleTreeNode`` for each of the firstparty modules
+        contained in the extraction.
+        """
+        max_depth = max(module_name.count('.') for module_name in extraction)
+        # We're going to sort all of the modules based on how deep their
+        # names are. We can then use this to make sure that the parent is
+        # fully defined before continuing on to the children, making it easier
+        # to construct the effective config.
+        depth_stack: list[dict[str, ModulePostExtraction]] = [
+            {} for _ in range(max_depth + 1)]
+        for module_name, module in extraction.items():
+            depth_stack[module_name.count('.')][module_name] = module
+
+        roots_by_pkg: dict[str, ModuleTreeNode] = {}
+        for package_name, root_module in depth_stack[0].items():
+            roots_by_pkg[package_name] = cls(
+                fullname=package_name,
+                relname=package_name,
+                effective_config=_coerce_config(root_module),
+                # I'm not sure if this is a pyright bug related to recursive
+                # generics, or if it's PEBKAC, but either way: ignoring is the
+                # most pragmatic resolution.
+                module=root_module)  # type: ignore
+
+        for submodule_depth in depth_stack[1:]:
+            for submodule_name, submodule in submodule_depth.items():
+                root_pkg_name, *_, relname = submodule_name.split('.')
+                parent_module_name, _, _ = submodule_name.rpartition('.')
+                root_node = roots_by_pkg[root_pkg_name]
+                parent_node = root_node.find(parent_module_name)
+                parent_cfg = parent_node.effective_config.get_stackables()
+                cfg = _coerce_config(submodule, parent_stackables=parent_cfg)
+                parent_node.children[relname] = cls(
+                    submodule_name,
+                    relname,
+                    effective_config=cfg,
+                    # This is presumably the same problem as above.
+                    module=submodule)  # type: ignore
+
+        return roots_by_pkg
+
+    def __truediv__(self, other: str) -> Self:
+        return self.children[other]
+
+
+type ModuleTreeNodeHydrated = ModuleTreeNode[
+    ModuleTreeNodeHydrated, ModulePostExtraction]
+type ModuleTreeNodeBare = ModuleTreeNode[ModuleTreeNodeBare, None]
+
+
+def _coerce_config(
+        module: ModulePostExtraction,
+        *,
+        parent_stackables: DocnoteConfigParams | None = None
+        ) -> DocnoteConfig:
+    """Given a module-post-extraction, checks for an explicit config
+    defined on the module itself. If found, returns it. If not found,
+    creates an empty one.
+    """
+    explicit_config = getattr(module, MODULE_DOCNOTE_CONFIG_ATTR, None)
+    if parent_stackables is None:
+        parent_stackables = {}
+
+    if explicit_config is None:
+        return DocnoteConfig(**parent_stackables)
+
+    elif not isinstance(explicit_config, DocnoteConfig):
+        raise TypeError(
+            f'``<module>.{MODULE_DOCNOTE_CONFIG_ATTR}`` must always '
+            + 'be a ``DocnoteConfig`` instance!', module, explicit_config)
+
+    # Note: the intermediate step is required to OVERWRITE the values. If we
+    # just did these directly within ``DocnoteConfig``, python would complain
+    # about getting multiple values for the same keyword arg.
+    combination: DocnoteConfigParams = {
+        **parent_stackables, **explicit_config.as_nontotal_dict()}
+    return DocnoteConfig(**combination)
