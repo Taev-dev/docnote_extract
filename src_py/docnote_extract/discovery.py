@@ -148,6 +148,24 @@ class ModuleTreeNode[TN: ModuleTreeNode, TM: ModulePostExtraction | None]:
 
         return node
 
+    def flatten(
+            self,
+            *,
+            _flattened: dict[str, TM] | None = None
+            ) -> dict[str, TM]:
+        """Converts the tree (back) into a flattened dictionary with
+        all nodes expressed by their fullname. If this is a bare tree
+        (ie, there are no modules), all of the values will be ``None``.
+        """
+        if _flattened is None:
+            _flattened = {}
+
+        _flattened[self.fullname] = self.module
+        for child in self.children.values():
+            child.flatten(_flattened=_flattened)
+
+        return _flattened
+
     @classmethod
     def from_extraction(
             cls,

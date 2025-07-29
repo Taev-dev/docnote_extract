@@ -102,3 +102,36 @@ class TestModuleTreeNode:
             enforce_known_lang=True)
         assert (foo_root / 'bar' / 'baz').effective_config == DocnoteConfig(
             enforce_known_lang=True, markup_lang='cleancopy')
+
+    def test_flattening(self):
+        """Flattening a tree from its extraction must reproduce the
+        extraction.
+        """
+        fake_extraction = {
+            'foo': ModuleType('foo'),
+            'foo.bar': ModuleType('foo.bar'),
+            'foo.bar.baz': ModuleType('foo.bar.baz'),
+            'oof': ModuleType('oof'),
+            'oof.rab': ModuleType('oof.rab'),
+            'oof.zab': ModuleType('oof.zab')}
+        setattr(
+            fake_extraction['foo'],
+            DOCNOTE_CONFIG_ATTR_FOR_MODULES,
+            DocnoteConfig(enforce_known_lang=False))
+        setattr(
+            fake_extraction['foo.bar'],
+            DOCNOTE_CONFIG_ATTR_FOR_MODULES,
+            DocnoteConfig(enforce_known_lang=True))
+        setattr(
+            fake_extraction['foo.bar.baz'],
+            DOCNOTE_CONFIG_ATTR_FOR_MODULES,
+            DocnoteConfig(markup_lang='cleancopy'))
+        fake_extraction = cast(
+            dict[str, ModulePostExtraction], fake_extraction)
+
+        retval = {}
+        root_nodes = ModuleTreeNode.from_extraction(fake_extraction)
+        for root_node in root_nodes.values():
+            retval.update(root_node.flatten())
+
+        assert retval == fake_extraction
