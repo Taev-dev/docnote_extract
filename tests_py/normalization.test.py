@@ -57,9 +57,9 @@ class TestNormalizeModuleMembers:
         assert norm_note.canonical_name == 'Note'
 
     @purge_cached_testpkg_modules
-    def test_notes(self):
+    def test_note(self):
         """A value defined within the module that contains a ``Note``
-        annotation must include it within the normalize object's note
+        annotation must include it within the normalized object's note
         attribute.
         """
         test_module = cast(
@@ -78,10 +78,10 @@ class TestNormalizeModuleMembers:
         assert norm_cfg_attr.config == DocnoteConfig()
 
     @purge_cached_testpkg_modules
-    def test_configs(self):
-        """A value defined within the module that contains a ``Note``
-        annotation must include it within the normalize object's note
-        attribute.
+    def test_config(self):
+        """A value defined within the module that contains a
+        ``DocnoteConfig`` annotation must include it within the
+        normalized object's config attribute.
         """
         test_module = cast(
             ModulePostExtraction,
@@ -95,3 +95,22 @@ class TestNormalizeModuleMembers:
         assert clcnote_attr.type_ == Callable[[str], Note]
         assert not clcnote_attr.notes
         assert clcnote_attr.config == DocnoteConfig(include_in_docs=False)
+
+    @purge_cached_testpkg_modules
+    def test_config_via_decorator(self):
+        """A value defined within the module that contains a
+        ``DocnoteConfig`` attached via the ``@docnote`` decorator must
+        include it within the normalized object's config attribute.
+        """
+        test_module = cast(
+            ModulePostExtraction,
+            import_module('docnote_extract_testpkg._hand_rolled.noteworthy'))
+        test_module._docnote_extract_import_tracking_registry = {}
+
+        normalized = normalize_module_dict(test_module)
+
+        func_attr = normalized['func_with_config']
+        assert not func_attr.annotations
+        assert func_attr.type_ is Singleton.MISSING
+        assert not func_attr.notes
+        assert func_attr.config == DocnoteConfig(include_in_docs=False)

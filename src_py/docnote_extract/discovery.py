@@ -14,6 +14,7 @@ from pkgutil import walk_packages
 from types import ModuleType
 from typing import Self
 
+from docnote import DOCNOTE_CONFIG_ATTR_FOR_MODULES
 from docnote import DocnoteConfig
 from docnote import DocnoteConfigParams
 
@@ -21,8 +22,6 @@ if typing.TYPE_CHECKING:
     from docnote_extract._extraction import ModulePostExtraction
 
 logger = logging.getLogger(__name__)
-
-MODULE_DOCNOTE_CONFIG_ATTR = 'DOCNOTE_CONFIG'
 
 
 def discover_all_modules(
@@ -246,7 +245,7 @@ def _coerce_config(
     defined on the module itself. If found, returns it. If not found,
     creates an empty one.
     """
-    explicit_config = getattr(module, MODULE_DOCNOTE_CONFIG_ATTR, None)
+    explicit_config = getattr(module, DOCNOTE_CONFIG_ATTR_FOR_MODULES, None)
     if parent_stackables is None:
         parent_stackables = {}
 
@@ -255,7 +254,7 @@ def _coerce_config(
 
     elif not isinstance(explicit_config, DocnoteConfig):
         raise TypeError(
-            f'``<module>.{MODULE_DOCNOTE_CONFIG_ATTR}`` must always '
+            f'``<module>.{DOCNOTE_CONFIG_ATTR_FOR_MODULES}`` must always '
             + 'be a ``DocnoteConfig`` instance!', module, explicit_config)
 
     # Note: the intermediate step is required to OVERWRITE the values. If we

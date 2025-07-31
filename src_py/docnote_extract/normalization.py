@@ -9,6 +9,7 @@ from typing import Literal
 from typing import get_origin
 from typing import get_type_hints
 
+from docnote import DOCNOTE_CONFIG_ATTR
 from docnote import DocnoteConfig
 from docnote import DocnoteConfigParams
 from docnote import Note
@@ -52,7 +53,13 @@ def normalize_module_dict(
                 type_ = raw_annotation
                 all_annotations = ()
 
-        config_params: DocnoteConfigParams = {}
+        config_params: DocnoteConfigParams
+        if hasattr(obj, DOCNOTE_CONFIG_ATTR):
+            config_params = getattr(
+                obj, DOCNOTE_CONFIG_ATTR).as_nontotal_dict()
+        else:
+            config_params = {}
+
         notes: list[Note] = []
         external_annotations = []
         for annotation in all_annotations:

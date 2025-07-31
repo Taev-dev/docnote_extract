@@ -7,6 +7,7 @@ from typing import Annotated
 from docnote import DocnoteConfig
 from docnote import MarkupLang
 from docnote import Note
+from docnote import docnote
 
 
 ClcNote: Annotated[
@@ -20,3 +21,11 @@ DOCNOTE_CONFIG_ATTR: Annotated[
             ``docnote`` decorator.
             ''')
     ] = '_docnote_config'
+
+
+@docnote(DocnoteConfig(include_in_docs=False))
+def func_with_config():
+    """This is here just to make sure that normalization works when a
+    config is attached via the ``@docnote`` decorator instead of an
+    annotation.
+    """
