@@ -18,12 +18,19 @@ from docnote_extract._extraction import ModulePostExtraction
 from docnote_extract._extraction import TrackingRegistry
 from docnote_extract._reftypes import is_reftyped
 from docnote_extract._types import Singleton
+from docnote_extract.discovery import ModuleTreeNode
 
 logger = logging.getLogger(__name__)
 
 
-def normalize_module_dict(
-        module: ModulePostExtraction
+# Ugh, normalization is always more complicated than it needs to be.
+def normalize_module_dict(  # noqa: C901, PLR0912
+        module: ModulePostExtraction,
+        module_tree: Annotated[
+                ModuleTreeNode,
+                Note('''Note that this needs to be the ^^full^^ firstparty
+                    module tree, and not just the node for the current module!
+                    ''')]
         ) -> dict[str, NormalizedObj]:
     from_annotations: dict[str, Any] = get_type_hints(
         module, include_extras=True)
@@ -39,6 +46,8 @@ def normalize_module_dict(
             containing_dunder_all=dunder_all,
             containing_annotation_names=set(from_annotations))
 
+        # Here we're associating the object with any module-level annotations,
+        # but we're not yet separating the docnote annotations from the rest
         raw_annotation = from_annotations.get(
             name, Singleton.MISSING)
         if raw_annotation is Singleton.MISSING:
@@ -53,13 +62,34 @@ def normalize_module_dict(
                 type_ = raw_annotation
                 all_annotations = ()
 
+        # Here we're starting to construct an effective config for the object.
+        # Note that this is kinda unseparable from the next part, since we're
+        # iterating over all of the annotations and separating them out into
+        # docnote-vs-not. I mean, yes, we could actually carve this out into
+        # a separate function, but it would be more effort than it's worth.
         config_params: DocnoteConfigParams
-        if hasattr(obj, DOCNOTE_CONFIG_ATTR):
-            config_params = getattr(
-                obj, DOCNOTE_CONFIG_ATTR).as_nontotal_dict()
-        else:
+        if canonical_module is Singleton.UNKNOWN or canonical_module is None:
             config_params = {}
+        else:
+            # Remember that we're checking EVERYTHING in the module right now,
+            # including things we've imported, so this might be outside the
+            # firstparty tree. Therefore, we need a fallback here.
+            try:
+                canonical_module_node = module_tree.find(canonical_module)
+            except (KeyError, ValueError):
+                config_params = {}
+            else:
+                config_params = (
+                    canonical_module_node.effective_config.get_stackables())
 
+        # This gets any config that was attrached via decorator, for classes
+        # and functions.
+        if hasattr(obj, DOCNOTE_CONFIG_ATTR):
+            config_params.update(
+                getattr(obj, DOCNOTE_CONFIG_ATTR).as_nontotal_dict())
+
+        # Now finally we're looking on the annotations themselves. Typically
+        # these are module-level variables.
         notes: list[Note] = []
         external_annotations = []
         for annotation in all_annotations:
@@ -72,10 +102,12 @@ def normalize_module_dict(
             else:
                 external_annotations.append(annotation)
 
+        # All done. Filtering comes later; here we JUST want to do the
+        # normalization!
         retval[name] = NormalizedObj(
             obj_or_stub=obj,
             annotations=tuple(external_annotations),
-            config=DocnoteConfig(**config_params),
+            effective_config=DocnoteConfig(**config_params),
             notes=tuple(notes),
             type_=type_,
             canonical_module=canonical_module,
@@ -126,25 +158,63 @@ def _get_or_infer_canonical_origin(
     if canonical_from_registry is not None:
         return canonical_from_registry
 
-    canonical_module = getattr(obj, '__module__', None)
+    canonical_module, canonical_name = _get_dunder_module_and_name(obj)
     if canonical_module is None:
         if (
+            # Summary:
+            # ++  not imported from a tracking module
+            # ++  no ``__module__`` attribute
+            # ++  name contained within ``__all__``
+            # Conclusion: assume it's a canonical member.
             name_in_containing_module in containing_dunder_all
+            # Summary:
+            # ++  not imported from a tracking module (or at least not uniquely
+            #     so) -- therefore, either a reftype or an actual value
+            # ++  no ``__module__`` attribute
+            # ++  name contained within **module annotations**
+            # Conclusion: assume it's a canonical member. This is almost
+            # guaranteed; otherwise you'd have to annotate something you just
+            # imported
             or name_in_containing_module in containing_annotation_names
         ):
             canonical_module = containing_module
+            canonical_name = name_in_containing_module
 
         else:
             canonical_module = Singleton.UNKNOWN
-
-    canonical_name = getattr(obj, '__name__', None)
-    if canonical_name is None:
-        if canonical_module == containing_module:
-            canonical_name = name_in_containing_module
-        else:
             canonical_name = Singleton.UNKNOWN
 
+    # Purely here to be defensive.
+    elif canonical_name is None:
+        raise RuntimeError(
+            'Impossible branch! ``__module__`` detected without ``__name__``!')
+
     return canonical_module, canonical_name
+
+
+def _get_dunder_module_and_name(
+        obj: Any
+        ) -> tuple[str, str] | tuple[None, None]:
+    """So, things are a bit more complicated than simply getting the
+    ``__module__`` attribute of an object and using it. The problem is
+    that INSTANCES of a class will inherit its ``__module__`` value.
+    This causes problems with... well, basically everything ^^except^^
+    classes, functions, methods, descriptors, and generators that are
+    defined within the module being inspected.
+
+    I thought about trying to import the ``__module__`` and then
+    comparing the actual ``obj`` against ``__module__.__name__``, but
+    that's a whole can of worms.
+
+    Instead, we're simply limiting the ``__module__`` value to only
+    return something if the ``__name__`` is also defined. This should
+    limit it to only the kinds of objects that don't cause problems.
+    """
+    canonical_name = getattr(obj, '__name__', None)
+    if canonical_name is None:
+        return None, None
+    else:
+        return obj.__module__, canonical_name
 
 
 @dataclass(slots=True)
@@ -159,13 +229,11 @@ class NormalizedObj:
             Note('''This is the actual runtime value of the object. It might
                 be a ``RefType`` stub or an actual object.''')]
     notes: tuple[Note, ...]
-    config: Annotated[
+    effective_config: Annotated[
             DocnoteConfig,
             Note('''This contains the end result of all direct configs on the
-                object. It does not, however, merge in any config values from
-                parent scopes. Therefore, this must be combined with the
-                stackables in parent scopes to result in the final effective
-                config for the object.''')]
+                object, layered on top of any stackable config items from
+                parent scope(s).''')]
     annotations: tuple[Any, ...]
     type_: Annotated[
             Any | Literal[Singleton.MISSING],
