@@ -818,6 +818,9 @@ class WrappedTrackingModule(ModuleType, _WrappedTrackingModuleBase):
     something that's the intersection between a moduletype and a
     WrappedTrackingModuleBase.
     """
+    # Including this to silence type errors when we create these manually for
+    # testing purposes
+    _docnote_extract_src_module: ModuleType
 
 
 class _ModulePostExtractionBase(Protocol):
@@ -830,6 +833,9 @@ class ModulePostExtraction(ModuleType, _ModulePostExtractionBase):
     something that's the intersection between a moduletype and a
     ModulePostExtractionBase.
     """
+    # Including this to silence type errors when we create these manually for
+    # testing purposes
+    _docnote_extract_import_tracking_registry: TrackingRegistry
 
 
 def is_module_post_extraction(
