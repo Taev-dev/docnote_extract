@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from dataclasses import field
 from dataclasses import fields as dc_fields
 from importlib import import_module
-from pkgutil import walk_packages
+from pkgutil import iter_modules
 from types import ModuleType
 from typing import Self
 
@@ -72,14 +72,14 @@ def eager_import_submodules(
     # are packages. In other words: packages have submodules, but if
     # is_package is falsy, then it doesn't. That's literally its meaning
     # here.
-    recurseable_pkg_modules = set()
+    recurseable_pkg_modules: set[ModuleType] = set()
 
-    # Theoretically walk_packages should be recursive, but in practice it
-    # appears to always require an ``__init__.py``, despite this not being
-    # the python spec.
+    # In theory we could just use ``walk_packages``, but I've had a bunch of
+    # problems with it, so we're basically implementing our own version of it
+    # here.
     # https://stackoverflow.com/questions/3365740/
     # https://stackoverflow.com/questions/17024605/
-    for __, submodule_name_rel, is_package in walk_packages(module.__path__):
+    for __, submodule_name_rel, is_package in iter_modules(module.__path__):
         submodule_name_abs = f'{parent_package_name}.{submodule_name_rel}'
 
         try:
@@ -89,10 +89,12 @@ def eager_import_submodules(
                 'Failed to import submodule %s; skipping', submodule_name_abs)
             continue
 
-        loaded_modules[submodule_name_abs] = submodule
-
-        if is_package:
+        # Make sure to do this check before adding it to loaded_modules, or
+        # this is a noop!
+        if is_package and submodule.__name__ not in loaded_modules:
             recurseable_pkg_modules.add(submodule)
+
+        loaded_modules[submodule_name_abs] = submodule
 
     # Separating this from the above for loop does insulates us from the actual
     # behavior of walk_packages in two ways. First, it deduplicates the modules
@@ -100,10 +102,9 @@ def eager_import_submodules(
     # compare the values with the already loaded modules, and skip them if they
     # were already loaded.
     for recurseable_pkg_module in recurseable_pkg_modules:
-        if recurseable_pkg_module not in loaded_modules:
-            eager_import_submodules(
-                recurseable_pkg_module,
-                loaded_modules=loaded_modules)
+        eager_import_submodules(
+            recurseable_pkg_module,
+            loaded_modules=loaded_modules)
 
     return loaded_modules
 
