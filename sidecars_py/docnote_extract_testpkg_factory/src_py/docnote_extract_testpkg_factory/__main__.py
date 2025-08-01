@@ -540,18 +540,20 @@ SOURCES: list[PkgSrcSpec] = [
     #     root_path='src/cryptography',
     #     commit_hash='d8a3f9aad4ca9b802d6beee7eb71b6f85a50c6a4',
     #     license_paths={'LICENSE', 'LICENSE.APACHE', 'LICENSE.BSD'}),
-    PkgSrcSpec(
-        repo_id='agronholm/anyio',
-        pkg_name='anyio',
-        root_path='src/anyio',
-        commit_hash='65fe287039e2ded48752e1111a82c29d07725e36',
-        license_paths={'LICENSE'}),
-    PkgSrcSpec(
-        repo_id='encode/httpx',
-        pkg_name='httpx',
-        root_path='httpx',
-        commit_hash='4fb9528c2f5ac000441c3634d297e77da23067cd',
-        license_paths={'LICENSE.md'}),
+    # This had some weird issues with indentation and docstrings
+    # PkgSrcSpec(
+    #     repo_id='agronholm/anyio',
+    #     pkg_name='anyio',
+    #     root_path='src/anyio',
+    #     commit_hash='65fe287039e2ded48752e1111a82c29d07725e36',
+    #     license_paths={'LICENSE'}),
+    # This does too much magic with sync/async stuff
+    # PkgSrcSpec(
+    #     repo_id='encode/httpx',
+    #     pkg_name='httpx',
+    #     root_path='httpx',
+    #     commit_hash='4fb9528c2f5ac000441c3634d297e77da23067cd',
+    #     license_paths={'LICENSE.md'}),
     PkgSrcSpec(
         repo_id='Badg/hwiopy',
         pkg_name='hwiopy',
