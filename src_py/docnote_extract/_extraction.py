@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import logging
 import sys
 import typing
@@ -15,6 +16,7 @@ from importlib import import_module
 from importlib import reload as reload_module
 from importlib.abc import Loader
 from importlib.machinery import ModuleSpec
+from importlib.util import module_from_spec
 from types import ModuleType
 from typing import Annotated
 from typing import Any
@@ -83,6 +85,7 @@ class _ExtractionPhase(Enum):
     """
     HOOKED = 'hooked'
     EXPLORATION = 'exploration'
+    PREPARATION = 'preparation'
     EXTRACTION = 'extraction'
 
 
@@ -178,6 +181,15 @@ class _ExtractionFinderLoader(Loader):
             # transitioning into tracked modules instead of the raw ones
             self.cleanup_sys(self._get_all_dirty_modules())
 
+            # We want to preemptively create tracking versions of all
+            # first-party nostub modules; this ensures we have the cleanest,
+            # stubbiest-possible collection of firstparty modules.
+            _EXTRACTION_PHASE.set(_ExtractionPhase.PREPARATION)
+            self._wrap_firstparty_nostubs()
+
+            # Clean everything one more time in case there were weird import
+            # deps in the firstparty nostub modules
+            self.cleanup_sys(self._get_all_dirty_modules())
             _EXTRACTION_PHASE.set(_ExtractionPhase.EXTRACTION)
 
             retval: dict[str, ModulePostExtraction] = {}
@@ -365,6 +377,17 @@ class _ExtractionFinderLoader(Loader):
             logger.info('Restoring prehook module %s', name)
             sys.modules[name] = module
 
+    def _wrap_firstparty_nostubs(self):
+        """We use this to eagerly construct tracking wrappers for all
+        firstparty nostub modules **before** any module is under
+        inspection. That way, we have the absolute bare minimum of real
+        modules, and we don't need to constantly re-create the
+        firstparty tracking modules to accommodate which modules were
+        unstubbed because they were under inspection.
+        """
+        for module_name in self.nostub_firstparty_modules:
+            import_module(module_name)
+
     def find_spec(
             self,
             fullname: str,
@@ -401,13 +424,18 @@ class _ExtractionFinderLoader(Loader):
             logger.debug('Will return stub spec for %s', fullname)
             # We don't need any loader state here; we're just going to stub it
             # completely, so we can simply return a plain spec.
-            return ModuleSpec(
+            spec = ModuleSpec(
                 name=fullname,
                 loader=self,
                 loader_state=_ExtractionLoaderState(
                     fullname=fullname,
                     is_firstparty=False,
                     stub_strategy=_StubStrategy.STUB))
+            # As per stdlib docs on modulespecs, this indicates to the import
+            # system that this has submodules. For stubs, we can't actually
+            # know this, so we just always set it.
+            spec.submodule_search_locations = []
+            return spec
 
         # All of the rest of our behavior depends upon our current
         # extraction phase.
@@ -420,7 +448,10 @@ class _ExtractionFinderLoader(Loader):
                 # raw specs for delegated loading.
                 return None
 
-            elif phase is _ExtractionPhase.EXTRACTION:
+            elif (
+                phase is _ExtractionPhase.EXTRACTION
+                or phase is _ExtractionPhase.PREPARATION
+            ):
                 return self._get_delegated_spec(
                     base_package, fullname, path, target)
 
@@ -438,13 +469,14 @@ class _ExtractionFinderLoader(Loader):
             fullname: str,
             path: Sequence[str] | None,
             target: ModuleType | None
-            ) -> ModuleSpec | None:
+            ) -> ModuleSpec:
         """Delegated specs are ones where we need the other
         finder/loaders to do the actual importing, but we need to first
         manipulate the import environment in some way, or wrap the
         resulting module.
         """
-        module_to_inspect = _MODULE_TO_INSPECT.get()
+        # The preparation phase doesn't have this set, hence the default
+        module_to_inspect = _MODULE_TO_INSPECT.get(None)
         # Note: ordering here is important. The inspection needs to happen
         # first, because you might have a nostub firstparty module under
         # inspection, and we need to short-circuit the other checks.
@@ -458,25 +490,32 @@ class _ExtractionFinderLoader(Loader):
         else:
             stub_strategy = _StubStrategy.STUB
 
-        # Here we can reuse the already-calculated spec from the
-        # thirdparty_stubbed phase, we just need to replace the
-        # tracking registry and stub strategy
-        existing_spec = self.module_stash_nostub_raw[fullname].__spec__
-        if existing_spec is None or existing_spec.loader is None:
-            logger.warning(
-                'No existing spec for delegated module during extraction; '
-                + 'tracking and stubbing will fail! %s', fullname)
-            return None
-
-        return ModuleSpec(
+        spec = ModuleSpec(
             name=fullname,
             loader=self,
             loader_state=_DelegatedLoaderState(
                 fullname=fullname,
                 is_firstparty=base_package in self.firstparty_packages,
-                delegated_loader=existing_spec.loader,
-                delegated_spec=existing_spec,
+                delegated_module=self.module_stash_nostub_raw[fullname],
                 stub_strategy=stub_strategy))
+
+        # As per stdlib docs on modulespecs, this indicates to the import
+        # system that this has submodules.
+        raw_module = self.module_stash_nostub_raw.get(fullname)
+        raw_module_spec = getattr(raw_module, '__spec__', None)
+        # Can't use hasattr here; it will always exist!
+        if (
+            getattr(raw_module_spec, 'submodule_search_locations', None)
+            is not None
+        ):
+            # Delegated specs are always, by definition, a wrapper of some
+            # sorts, so we don't want to copy the value over, but we do want
+            # to make sure the existence of the attr is the same.
+            spec.submodule_search_locations = []
+        if (origin := getattr(raw_module_spec, 'origin', None)) is not None:
+            spec.origin = origin
+
+        return spec
 
     def create_module(self, spec: ModuleSpec) -> None | ModuleType:
         """What we do here depends on the stubbing strategy for the
@@ -502,6 +541,8 @@ class _ExtractionFinderLoader(Loader):
                 + 'and may cause stuff to break.', spec.name)
             return None
 
+        # Note: this needs to be ahead of the _DelegatedLoaderState check,
+        # since this might be a stubbed firstparty module!
         if loader_state.stub_strategy is _StubStrategy.STUB:
             if loader_state.fullname in self.module_stash_stubbed:
                 logger.debug(
@@ -514,16 +555,19 @@ class _ExtractionFinderLoader(Loader):
                     'Using default module machinery for stubbed module: %s',
                     loader_state.fullname)
 
+        # This could be either: firstparty inspect, firstparty nostub, or
+        # thirdparty nostub.
         else:
             if not isinstance(loader_state, _DelegatedLoaderState):
+                # Theoretically impossible. Indicates a bug.
                 logger.warning(
-                    'Delegated ``_StubStrategy`` without '
+                    'Likely bug: delegated/nostub ``_StubStrategy`` without '
                     + '``_DelegatedLoaderState``! Tracking and/or inspection '
                     + 'will break for %s.', loader_state.fullname)
 
             else:
                 # We don't have a stash for inspected modules (because they're
-                # only used once).
+                # only used once), so we only need to check this one stash.
                 if loader_state.fullname in self.module_stash_tracked:
                     logger.debug(
                         'Using cached tracking module for %s',
@@ -531,29 +575,20 @@ class _ExtractionFinderLoader(Loader):
                     loader_state.from_stash = True
                     return self.module_stash_tracked[loader_state.fullname]
 
-                # Since the stubbing status of the rest of the firstparty
-                # package tree will have changed, we need to re-create any
-                # firstparty tracked modules (in addition to the inspection
-                # ones, which are always firstparty).
-                if loader_state.is_firstparty:
-                    delegated_loader = loader_state.delegated_loader
-                    delegated_module = delegated_loader.create_module(
-                        spec.loader_state)
+                # This can happen either during preparation (for firstparty
+                # nostub/tracking modules) or during inspection (for the module
+                # being inspected)
+                logger.debug(
+                    'Creating new delegated module %s for inspection or '
+                    + 'tracking (firstparty: %s, under inspection: %s)',
+                    loader_state.fullname, loader_state.is_firstparty,
+                    loader_state.stub_strategy is _StubStrategy.INSPECT)
 
-                    if delegated_module is None:
-                        logger.debug(
-                            'Using default module machinery for delegated '
-                            + 'wrapped module: %s', spec.name)
-                        delegated_module = ModuleType(spec.name)
-                        delegated_module.__name__ = spec.name
-                        delegated_module.__loader__ = delegated_loader
-                        delegated_module.__spec__ = spec
-
-                    loader_state.delegated_module = delegated_module
-
-                # Note that non-firstparty tracked packages can always just
-                # use the default machinery, because we're just going to grab
-                # the stashed module for the target, and not recreate it.
+                # In all 3 cases, we use the default module creation semantics,
+                # because we're only going to be referencing or retrieving
+                # source from the already-loaded module, and not relying upon
+                # the import system for delegation.
+                return None
 
     def exec_module(self, module: ModuleType):
         """Ah, at long last: the final step of the import process.
@@ -610,30 +645,39 @@ class _ExtractionFinderLoader(Loader):
             logger.debug('Stubbing module: %s', module.__name__)
             module.__getattr__ = partial(
                 _stubbed_getattr, module_name=module.__name__)
-            module.__path__ = []
             self.module_stash_stubbed[loader_state.fullname] = module
+            # Always set this to indicate that it has submodules. We can't
+            # know this -- at least not for thirdparty stubs -- so we always
+            # just set it.
+            module.__path__ = []
 
         elif isinstance(loader_state, _DelegatedLoaderState):
+            real_module = loader_state.delegated_module
+
             if loader_state.stub_strategy is _StubStrategy.TRACK:
                 logger.debug(
                     'Wrapping module w/ tracking proxy: %s',
                     loader_state.fullname)
                 module = cast(WrappedTrackingModule, module)
                 # Firstparty tracking needs to re-exec'd, because the stub
-                # state of other firstparty modules has changed.
+                # state of other firstparty modules has changed. Note that we
+                # only do this once, eagerly (during the preparation phase),
+                # so that we're not constantly recreating tracking modules.
                 if loader_state.is_firstparty:
-                    delegated_module = loader_state.delegated_module
-                    loader_state.delegated_loader.exec_module(delegated_module)
-                # Otherwise, we can just grab the module from the raw stash.
+                    module_source = inspect.getsource(real_module)
+                    delegated_module = _clone_import_attrs(real_module, spec)
+                    exec(module_source, delegated_module.__dict__)  # noqa: S102
+
+                # Thirdparty tracking can just reuse the real module directly
+                # for its attr lookups, because thirdparty stub state never
+                # changes.
                 else:
-                    delegated_module = self.module_stash_nostub_raw[
-                        loader_state.fullname]
+                    delegated_module = real_module
 
                 module.__getattr__ = partial(
                     _wrapped_tracking_getattr,
                     module_name=module.__name__,
                     src_module=delegated_module)
-                module.__path__ = []
                 module._docnote_extract_src_module = delegated_module
                 self.module_stash_tracked[loader_state.fullname] = module
 
@@ -643,13 +687,17 @@ class _ExtractionFinderLoader(Loader):
                 # purposes!
                 self.inspected_modules.add(loader_state.fullname)
                 logger.debug(
-                    'Delegating module exec for module under inspection: %s',
+                    'Re-execing module for inspection: %s',
                     loader_state.fullname)
+
+                real_module = loader_state.delegated_module
+                module_source = inspect.getsource(real_module)
+                _clone_import_attrs(real_module, spec, dest_module=module)
                 # This allows us to also get references hidden behind circular
                 # imports
                 typing.TYPE_CHECKING = True
                 try:
-                    loader_state.delegated_loader.exec_module(module)
+                    exec(module_source, module.__dict__)  # noqa: S102
                 finally:
                     typing.TYPE_CHECKING = False
 
@@ -660,12 +708,52 @@ class _ExtractionFinderLoader(Loader):
                     loader_state.fullname)
                 return
 
+            # We don't want to copy the attribute, because it doesn't have
+            # semantic meaning for us. However, we do want to make sure that
+            # its (non-)existence matches the original, since it has meaning
+            # for the import system
+            if hasattr(real_module, '__path__'):
+                module.__path__ = []
+
         else:
             logger.error(
                 'Wrong loader state type for delegated or stubbed module %s '
                 + 'during ``exec_module``. Will noop; expect import errors!',
                 loader_state.fullname)
             return
+
+
+def _clone_import_attrs(
+        src_module: ModuleType,
+        spec: ModuleSpec,
+        *,
+        dest_module: ModuleType | None = None
+        ) -> ModuleType:
+    """Given an existing module, this creates a clone of that module,
+    with ONLY the import-specific values populated. This allows us to
+    then exec into that module's namespace, resulting in an alternate
+    version of the module, which is useful when you need to create a
+    new version of the module with a different stubbing status.
+    """
+    if dest_module is None:
+        dest_module = module_from_spec(spec)
+
+    if hasattr(src_module, '__package__'):
+        dest_module.__package__ = src_module.__package__
+    elif hasattr(dest_module, '__package__'):
+        delattr(dest_module, '__package__')
+
+    if hasattr(src_module, '__path__'):
+        dest_module.__path__ = []
+    elif hasattr(dest_module, '__path__'):
+        delattr(dest_module, '__path__')
+
+    if hasattr(src_module, '__file__'):
+        dest_module.__file__ = src_module.__file__
+    elif hasattr(dest_module, '__file__'):
+        delattr(dest_module, '__file__')
+
+    return dest_module
 
 
 @contextmanager
@@ -702,9 +790,7 @@ class _DelegatedLoaderState(_ExtractionLoaderState):
     partly as a way to easily detect that a module was created via the
     delegated/alt path.
     """
-    delegated_loader: Loader
-    delegated_spec: ModuleSpec
-    delegated_module: ModuleType = field(init=False)
+    delegated_module: ModuleType
 
 
 def _wrapped_tracking_getattr(
@@ -754,6 +840,14 @@ def _stubbed_getattr(name: str, *, module_name: str):
     it exists on the true source module; we're relying upon type
     checkers to ensure that) with a reftype.
     """
+    if name == '__all__':
+        logger.warning(
+            'Star imports from stubbed modules are unsupported (consult the '
+            + 'docs for more details). As a fallback, we return an empty '
+            + '``__all__``; expect downstream code to break. (%s)',
+            module_name)
+        return []
+
     to_reference = RefMetadata(module=module_name, name=name, traversals=())
     special_markers = _REFTYPE_MARKERS.get()
 

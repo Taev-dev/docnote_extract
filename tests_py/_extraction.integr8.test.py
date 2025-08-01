@@ -1,5 +1,6 @@
 import importlib
 import sys
+from importlib.machinery import ModuleSpec
 from unittest.mock import patch
 
 import pytest
@@ -15,6 +16,8 @@ from docnote_extract._reftypes import is_reftyped
 
 import docnote_extract_testpkg
 import docnote_extract_testpkg._hand_rolled
+import docnote_extract_testpkg._hand_rolled.noteworthy
+import docnote_extract_testpkg._hand_rolled.relativity
 import docnote_extract_testutils
 from docnote_extract_testutils.fixtures import purge_cached_testpkg_modules
 from docnote_extract_testutils.fixtures import set_inspection
@@ -263,3 +266,69 @@ class TestExtractionFinderLoader:
         assert registry[id(to_inspect.RENAMED_SENTINEL)] == (
             'docnote_extract_testpkg._hand_rolled',
             'SOME_SENTINEL')
+
+    @patch('docnote_extract._extraction.discover_all_modules', autospec=True)
+    @purge_cached_testpkg_modules
+    def test_relative_imports_stubbed(self, mock_discover):
+        """After installing the import hook and while inspecting a
+        module, relative imports must A) work and B) still be
+        stubbed.
+        """
+        # Mock this out so we don't check literally the entire testpkg
+        mock_discover.side_effect = fake_discover_factory([
+            'docnote_extract_testpkg',
+            'docnote_extract_testpkg._hand_rolled',
+            'docnote_extract_testpkg._hand_rolled.noteworthy',
+            'docnote_extract_testpkg._hand_rolled.relativity',])
+
+        floader = _ExtractionFinderLoader(
+            frozenset({'docnote_extract_testpkg'}),
+            nostub_packages=frozenset({'pytest'}),
+            module_stash_nostub_raw={
+                'pytest': pytest,
+                'docnote_extract_testpkg': docnote_extract_testpkg,
+                'docnote_extract_testpkg._hand_rolled':
+                    docnote_extract_testpkg._hand_rolled,
+                'docnote_extract_testpkg._hand_rolled.noteworthy':
+                    docnote_extract_testpkg._hand_rolled.noteworthy,
+                'docnote_extract_testpkg._hand_rolled.relativity':
+                    docnote_extract_testpkg._hand_rolled.relativity,})
+
+        retval = floader.discover_and_extract()
+
+        to_inspect = retval['docnote_extract_testpkg._hand_rolled.relativity']
+        assert not is_reftyped(to_inspect)
+        assert is_reftyped(to_inspect.SOME_CONSTANT)
+        assert is_reftyped(to_inspect.ROOT_VAR)
+        assert is_reftyped(to_inspect.func_with_config)
+
+    @patch('docnote_extract._extraction.discover_all_modules', autospec=True)
+    @purge_cached_testpkg_modules
+    def test_import_names_available(self, mock_discover):
+        """After installing the import hook and while inspecting a
+        module, import-relevant names like ``__file__`` and ``__name__``
+        must exist.
+        """
+        # Mock this out so we don't check literally the entire testpkg
+        mock_discover.side_effect = fake_discover_factory([
+            'docnote_extract_testpkg',
+            'docnote_extract_testpkg._hand_rolled',
+            'docnote_extract_testpkg._hand_rolled.uses_import_names',])
+
+        floader = _ExtractionFinderLoader(
+            frozenset({'docnote_extract_testpkg'}),
+            nostub_packages=frozenset({'pytest'}),
+            module_stash_nostub_raw={
+                'pytest': pytest,
+                'docnote_extract_testpkg': docnote_extract_testpkg,
+                'docnote_extract_testpkg._hand_rolled':
+                    docnote_extract_testpkg._hand_rolled,})
+
+        retval = floader.discover_and_extract()
+
+        mod_name = 'docnote_extract_testpkg._hand_rolled.uses_import_names'
+        to_inspect = retval[mod_name]
+        assert not is_reftyped(to_inspect)
+        assert isinstance(to_inspect.FILE, str)
+        assert isinstance(to_inspect.SPEC, ModuleSpec)
+        assert to_inspect.NAME == mod_name
