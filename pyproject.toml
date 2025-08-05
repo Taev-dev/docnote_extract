@@ -7,7 +7,7 @@ requires-python = ">= 3.12"
 readme = "README.md"
 
 dependencies = [
-    "docnote>=2025.7.29.0",
+    "docnote>=2025.8.5.0",
 ]
 
 [dependency-groups]
