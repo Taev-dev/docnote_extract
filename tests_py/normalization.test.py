@@ -75,7 +75,7 @@ class TestNormalizeModuleMembers:
         normalized = normalize_module_dict(docnote, module_tree)
 
         norm_note = normalized['Note']
-        assert not norm_note.annotations
+        assert not norm_note.annotateds
         assert norm_note.type_ is Singleton.MISSING
         assert norm_note.canonical_module == \
             'docnote_extract_testpkg.taevcode.docnote'
@@ -107,7 +107,7 @@ class TestNormalizeModuleMembers:
         normalized = normalize_module_dict(test_module, module_tree)
 
         norm_cfg_attr = normalized['DOCNOTE_CONFIG_ATTR']
-        assert not norm_cfg_attr.annotations
+        assert not norm_cfg_attr.annotateds
         assert norm_cfg_attr.type_ is str
         assert len(norm_cfg_attr.notes) == 1
         note, = norm_cfg_attr.notes
@@ -140,7 +140,7 @@ class TestNormalizeModuleMembers:
         normalized = normalize_module_dict(test_module, module_tree)
 
         clcnote_attr = normalized['ClcNote']
-        assert not clcnote_attr.annotations
+        assert not clcnote_attr.annotateds
         assert clcnote_attr.type_ == Callable[[str], Note]
         assert not clcnote_attr.notes
         assert clcnote_attr.effective_config == DocnoteConfig(
@@ -173,7 +173,7 @@ class TestNormalizeModuleMembers:
         normalized = normalize_module_dict(test_module, module_tree)
 
         clcnote_attr = normalized['ClcNote']
-        assert not clcnote_attr.annotations
+        assert not clcnote_attr.annotateds
         assert clcnote_attr.type_ == Callable[[str], Note]
         assert not clcnote_attr.notes
         assert clcnote_attr.effective_config == DocnoteConfig(
@@ -206,7 +206,7 @@ class TestNormalizeModuleMembers:
         normalized = normalize_module_dict(test_module, module_tree)
 
         func_attr = normalized['func_with_config']
-        assert not func_attr.annotations
+        assert not func_attr.annotateds
         assert func_attr.type_ is Singleton.MISSING
         assert not func_attr.notes
         assert func_attr.effective_config == DocnoteConfig(

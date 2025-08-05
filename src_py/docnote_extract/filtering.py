@@ -1,9 +1,17 @@
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from docnote_extract._extraction import ModulePostExtraction
 from docnote_extract._types import Singleton
 from docnote_extract.discovery import ModuleTreeNodeHydrated
 from docnote_extract.normalization import NormalizedObj
+
+type ModuleObjectFilter = Callable[
+    [ModulePostExtraction, dict[str, NormalizedObj]],
+    dict[str, NormalizedObj]]
+type ObjectFilter = Callable[
+    [dict[str, NormalizedObj]], dict[str, NormalizedObj]]
 
 
 def filter_modules(
@@ -35,8 +43,8 @@ def filter_modules(
 
 
 def filter_module_members(
-        normalized_objs: dict[str, NormalizedObj],
         module: ModulePostExtraction,
+        normalized_objs: dict[str, NormalizedObj],
         *,
         remove_unknown_origins: bool = True
         ) -> dict[str, NormalizedObj]:

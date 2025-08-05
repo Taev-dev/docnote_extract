@@ -51,16 +51,16 @@ def normalize_module_dict(  # noqa: C901, PLR0912
         raw_annotation = from_annotations.get(
             name, Singleton.MISSING)
         if raw_annotation is Singleton.MISSING:
-            all_annotations = ()
+            all_annotateds = ()
             type_ = raw_annotation
         else:
             origin = get_origin(raw_annotation)
             if origin is Annotated:
                 type_ = raw_annotation.__origin__
-                all_annotations = raw_annotation.__metadata__
+                all_annotateds = raw_annotation.__metadata__
             else:
                 type_ = raw_annotation
-                all_annotations = ()
+                all_annotateds = ()
 
         # Here we're starting to construct an effective config for the object.
         # Note that this is kinda unseparable from the next part, since we're
@@ -91,8 +91,8 @@ def normalize_module_dict(  # noqa: C901, PLR0912
         # Now finally we're looking on the annotations themselves. Typically
         # these are module-level variables.
         notes: list[Note] = []
-        external_annotations = []
-        for annotation in all_annotations:
+        external_annotateds = []
+        for annotation in all_annotateds:
             if isinstance(annotation, Note):
                 notes.append(annotation)
                 if annotation.config is not None:
@@ -100,13 +100,13 @@ def normalize_module_dict(  # noqa: C901, PLR0912
             elif isinstance(annotation, DocnoteConfig):
                 config_params.update(annotation.as_nontotal_dict())
             else:
-                external_annotations.append(annotation)
+                external_annotateds.append(annotation)
 
         # All done. Filtering comes later; here we JUST want to do the
         # normalization!
         retval[name] = NormalizedObj(
             obj_or_stub=obj,
-            annotations=tuple(external_annotations),
+            annotateds=tuple(external_annotateds),
             effective_config=DocnoteConfig(**config_params),
             notes=tuple(notes),
             type_=type_,
@@ -220,7 +220,7 @@ def _get_dunder_module_and_name(
 @dataclass(slots=True)
 class NormalizedObj:
     """This is a normalized representation of an object. It contains the
-    (stubbed) runtime value of the object along with any annotations
+    (stubbed) runtime value of the object along with any annotateds
     (from ``Annotated``), as well as the unpacked-from-``Annotated``
     type itself.
     """
@@ -234,7 +234,7 @@ class NormalizedObj:
             Note('''This contains the end result of all direct configs on the
                 object, layered on top of any stackable config items from
                 parent scope(s).''')]
-    annotations: tuple[Any, ...]
+    annotateds: tuple[object, ...]
     type_: Annotated[
             Any | Literal[Singleton.MISSING],
             Note('''This might be a literal value, as is the case with

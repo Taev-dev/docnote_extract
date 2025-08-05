@@ -171,7 +171,7 @@ class TestFilterModuleMembers:
                 canonical_module=Singleton.UNKNOWN,
                 canonical_name=Singleton.UNKNOWN)}
 
-        retval = filter_module_members(normalized_objs, module)
+        retval = filter_module_members(module, normalized_objs)
 
         assert retval is not normalized_objs
 
@@ -190,7 +190,7 @@ class TestFilterModuleMembers:
                 canonical_module=Singleton.UNKNOWN,
                 canonical_name=Singleton.UNKNOWN)}
 
-        retval = filter_module_members(normalized_objs, module)
+        retval = filter_module_members(module, normalized_objs)
 
         assert not retval
 
@@ -211,7 +211,7 @@ class TestFilterModuleMembers:
                 canonical_module='foo',
                 canonical_name='bar')}
 
-        retval = filter_module_members(normalized_objs, module)
+        retval = filter_module_members(module, normalized_objs)
 
         assert retval
         assert retval == normalized_objs
@@ -233,7 +233,7 @@ class TestFilterModuleMembers:
                 canonical_module='oof',
                 canonical_name='bar')}
 
-        retval = filter_module_members(normalized_objs, module)
+        retval = filter_module_members(module, normalized_objs)
 
         assert not retval
 
@@ -255,7 +255,7 @@ class TestFilterModuleMembers:
                 canonical_module='oof',
                 canonical_name='bar')}
 
-        retval = filter_module_members(normalized_objs, module)
+        retval = filter_module_members(module, normalized_objs)
 
         assert not retval
 
