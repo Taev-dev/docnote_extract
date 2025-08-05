@@ -5,12 +5,16 @@ from types import ModuleType
 from typing import cast
 from unittest.mock import patch
 
+import pytest
 from docnote import DOCNOTE_CONFIG_ATTR_FOR_MODULES
 from docnote import DocnoteConfig
+from docnote import MarkupLang
 
 from docnote_extract._extraction import ModulePostExtraction
 from docnote_extract.discovery import ModuleTreeNode
 from docnote_extract.discovery import eager_import_submodules
+from docnote_extract.discovery import validate_config
+from docnote_extract.exceptions import InvalidConfig
 
 from docnote_extract_testutils.fixtures import purge_cached_testpkg_modules
 
@@ -118,7 +122,7 @@ class TestModuleTreeNode:
         setattr(
             fake_extraction['foo.bar.baz'],
             DOCNOTE_CONFIG_ATTR_FOR_MODULES,
-            DocnoteConfig(markup_lang='cleancopy'))
+            DocnoteConfig(markup_lang=MarkupLang.CLEANCOPY))
         fake_extraction = cast(
             dict[str, ModulePostExtraction], fake_extraction)
 
@@ -140,7 +144,7 @@ class TestModuleTreeNode:
         assert (foo_root / 'bar').effective_config == DocnoteConfig(
             enforce_known_lang=True)
         assert (foo_root / 'bar' / 'baz').effective_config == DocnoteConfig(
-            enforce_known_lang=True, markup_lang='cleancopy')
+            enforce_known_lang=True, markup_lang=MarkupLang.CLEANCOPY)
 
     def test_flattening(self):
         """Flattening a tree from its extraction must reproduce the
@@ -164,7 +168,7 @@ class TestModuleTreeNode:
         setattr(
             fake_extraction['foo.bar.baz'],
             DOCNOTE_CONFIG_ATTR_FOR_MODULES,
-            DocnoteConfig(markup_lang='cleancopy'))
+            DocnoteConfig(markup_lang=MarkupLang.CLEANCOPY))
         fake_extraction = cast(
             dict[str, ModulePostExtraction], fake_extraction)
 
@@ -191,10 +195,34 @@ class TestModuleTreeNode:
                     'baz',
                     effective_config=DocnoteConfig())},
                 effective_config=DocnoteConfig())},
-            effective_config=DocnoteConfig(markup_lang='cleancopy'))
+            effective_config=DocnoteConfig(markup_lang=MarkupLang.CLEANCOPY))
 
         clone = tree.clone_without_children()
         assert not clone.children
         assert clone != tree
         tree.children.clear()
         assert clone == tree
+
+
+class TestValidateConfig:
+
+    def test_no_enforcement(self):
+        """A config with no enforcement set must return True."""
+        config = DocnoteConfig(enforce_known_lang=False, markup_lang='foobar')
+        assert validate_config(config, None) is True
+
+    def test_valid(self):
+        """A valid config must return True."""
+        config = DocnoteConfig(
+            enforce_known_lang=True,
+            markup_lang=MarkupLang.CLEANCOPY)
+        assert validate_config(config, None) is True
+
+    def test_invalid(self):
+        """An invalid config must raise InvalidConfig."""
+        config = DocnoteConfig(
+            enforce_known_lang=True,
+            markup_lang='foobar')
+
+        with pytest.raises(InvalidConfig):
+            validate_config(config, None)

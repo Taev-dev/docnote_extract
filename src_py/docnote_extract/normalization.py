@@ -19,6 +19,7 @@ from docnote_extract._extraction import TrackingRegistry
 from docnote_extract._reftypes import is_reftyped
 from docnote_extract._types import Singleton
 from docnote_extract.discovery import ModuleTreeNode
+from docnote_extract.discovery import validate_config
 
 logger = logging.getLogger(__name__)
 
@@ -251,3 +252,9 @@ class NormalizedObj:
     # What name the object had in the module it was declared. String if
     # known, None if not applicable.
     canonical_name: str | Literal[Singleton.UNKNOWN] | None
+
+    def __post_init__(self):
+        validate_config(
+            self.effective_config,
+            f'Object effective config for {self.obj_or_stub} '
+            + f'({self.canonical_module=}, {self.canonical_name=})')

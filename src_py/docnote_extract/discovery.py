@@ -12,11 +12,16 @@ from dataclasses import fields as dc_fields
 from importlib import import_module
 from pkgutil import iter_modules
 from types import ModuleType
+from typing import Any
+from typing import Literal
 from typing import Self
 
 from docnote import DOCNOTE_CONFIG_ATTR_FOR_MODULES
 from docnote import DocnoteConfig
 from docnote import DocnoteConfigParams
+
+from docnote_extract import KNOWN_MARKUP_LANGS
+from docnote_extract.exceptions import InvalidConfig
 
 if typing.TYPE_CHECKING:
     from docnote_extract._extraction import ModulePostExtraction
@@ -231,6 +236,10 @@ class ModuleTreeNode[TN: ModuleTreeNode, TM: ModulePostExtraction | None]:
     def __truediv__(self, other: str) -> Self:
         return self.children[other]
 
+    def __post_init__(self):
+        validate_config(
+            self.effective_config, f'Module-level config for {self.fullname}')
+
 
 type ModuleTreeNodeHydrated = ModuleTreeNode[
     ModuleTreeNodeHydrated, ModulePostExtraction]
@@ -264,3 +273,19 @@ def _coerce_config(
     combination: DocnoteConfigParams = {
         **parent_stackables, **explicit_config.as_nontotal_dict()}
     return DocnoteConfig(**combination)
+
+
+def validate_config(config: DocnoteConfig, hint: Any) -> Literal[True]:
+    """Performs any config enforcement (currently, just the
+    ``enforce_known_lang`` parameter). Raises ``InvalidConfig`` if
+    enforcement fails.
+    """
+    if config.enforce_known_lang:
+        if (
+            config.markup_lang is not None
+            and config.markup_lang not in KNOWN_MARKUP_LANGS
+        ):
+            raise InvalidConfig(
+                'Unknown markup lang with enforcement enabled!', config, hint)
+
+    return True
