@@ -26,9 +26,9 @@ from typing import cast
 
 from docnote import Note
 
-from docnote_extract._reftypes import RefMetadata
-from docnote_extract._reftypes import make_metaclass_reftype
-from docnote_extract._reftypes import make_reftype
+from docnote_extract._crossrefs import Crossref
+from docnote_extract._crossrefs import make_crossreffed
+from docnote_extract._crossrefs import make_metaclass_crossreffed
 from docnote_extract._types import Singleton
 from docnote_extract.discovery import discover_all_modules
 
@@ -57,7 +57,7 @@ _ACTIVE_TRACKING_REGISTRY: ContextVar[TrackingRegistry] = ContextVar(
 logger = logging.getLogger(__name__)
 
 
-class ReftypeMarker(Enum):
+class CrossrefMarker(Enum):
     METACLASS = 'metaclass'
     DECORATOR = 'decorator'
 
@@ -71,10 +71,10 @@ class _StubStrategy(Enum):
     TRACK = 'track'
 
 
-_REFTYPE_MARKERS: ContextVar[dict[RefMetadata, ReftypeMarker]] = ContextVar(
+_REFTYPE_MARKERS: ContextVar[dict[Crossref, CrossrefMarker]] = ContextVar(
     '_REFTYPE_MARKERS', default={  # noqa: B039
-        RefMetadata(module='configatron', name='ConfigMeta', traversals=()):
-            ReftypeMarker.METACLASS
+        Crossref(module_name='configatron', toplevel_name='ConfigMeta'):
+            CrossrefMarker.METACLASS
     })
 
 
@@ -848,17 +848,17 @@ def _stubbed_getattr(name: str, *, module_name: str):
             module_name)
         return []
 
-    to_reference = RefMetadata(module=module_name, name=name, traversals=())
+    to_reference = Crossref(module_name=module_name, toplevel_name=name)
     special_markers = _REFTYPE_MARKERS.get()
 
     special_reftype = special_markers.get(to_reference)
     if special_reftype is None:
         logger.debug('Returning normal reftype for %s', to_reference)
-        return make_reftype(module=module_name, name=name)
+        return make_crossreffed(module=module_name, name=name)
 
-    elif special_reftype is ReftypeMarker.METACLASS:
+    elif special_reftype is CrossrefMarker.METACLASS:
         logger.debug('Returning metaclass reftype for %s.', to_reference)
-        return make_metaclass_reftype(module=module_name, name=name)
+        return make_metaclass_crossreffed(module=module_name, name=name)
 
     else:
         # This is just blocked on having a decorator flavor added to
@@ -869,9 +869,9 @@ def _stubbed_getattr(name: str, *, module_name: str):
 
 
 @contextmanager
-def mark_special_reftype(markers: dict[RefMetadata, ReftypeMarker]):
+def mark_special_reftype(markers: dict[Crossref, CrossrefMarker]):
     """This contextmanager/decorator can be used as an escape hatch to
-    force the import hook to create a special ``Reftype`` instance that
+    force the import hook to create a special ``Crossref`` instance that
     can, for example, be used as a metaclass. This allows you to
     continue to use import stubs, even when you depend on (or yourself
     author) libraries that make use of metaprogramming techniques that
@@ -881,7 +881,7 @@ def mark_special_reftype(markers: dict[RefMetadata, ReftypeMarker]):
         if ref.traversals:
             # The problem here is that we need to update the whole reftype
             # creation process. This needs to get injected right at the call
-            # to ``make_reftype`` if we're going to support traversals,
+            # to ``make_crossreffed`` if we're going to support traversals,
             # or something. It gets complicated quickly.
             raise NotImplementedError(
                 'Traversals not yet supported for special reftypes.')

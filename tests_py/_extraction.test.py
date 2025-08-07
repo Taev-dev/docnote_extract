@@ -5,9 +5,12 @@ from unittest.mock import patch
 
 import pytest
 
+from docnote_extract._crossrefs import Crossref
+from docnote_extract._crossrefs import CrossrefMixin
+from docnote_extract._crossrefs import is_crossreffed
 from docnote_extract._extraction import _MODULE_TO_INSPECT
 from docnote_extract._extraction import _REFTYPE_MARKERS
-from docnote_extract._extraction import ReftypeMarker
+from docnote_extract._extraction import CrossrefMarker
 from docnote_extract._extraction import _DelegatedLoaderState
 from docnote_extract._extraction import _ExtractionFinderLoader
 from docnote_extract._extraction import _ExtractionLoaderState
@@ -16,9 +19,6 @@ from docnote_extract._extraction import _stubbed_getattr
 from docnote_extract._extraction import _StubStrategy
 from docnote_extract._extraction import is_module_post_extraction
 from docnote_extract._extraction import mark_special_reftype
-from docnote_extract._reftypes import RefMetadata
-from docnote_extract._reftypes import ReftypeMixin
-from docnote_extract._reftypes import is_reftyped
 
 import docnote_extract_testpkg
 from docnote_extract_testutils.fixtures import set_inspection
@@ -264,25 +264,26 @@ class TestStubbedGetattr:
         retval = _stubbed_getattr(module_name='configatron', name='ConfigMeta')
         assert isinstance(retval, type)
         assert issubclass(retval, type)
-        assert not issubclass(retval, ReftypeMixin)
-        assert is_reftyped(retval)
-        assert retval._docnote_extract_metadata == RefMetadata(
-            module='configatron', name='ConfigMeta')
+        assert not issubclass(retval, CrossrefMixin)
+        assert is_crossreffed(retval)
+        assert retval._docnote_extract_metadata == Crossref(
+            module_name='configatron', toplevel_name='ConfigMeta')
 
     def test_manual_metaclass_markers(self):
         """Must return a metaclass reftype for any module:attr in the
         manual metaclass markers lookup.
         """
         with mark_special_reftype(
-            {RefMetadata('foo', 'Foo'): ReftypeMarker.METACLASS}
+            {Crossref(module_name='foo', toplevel_name='Foo'):
+                CrossrefMarker.METACLASS}
         ):
             retval = _stubbed_getattr(module_name='foo', name='Foo')
         assert isinstance(retval, type)
         assert issubclass(retval, type)
-        assert not issubclass(retval, ReftypeMixin)
-        assert is_reftyped(retval)
-        assert retval._docnote_extract_metadata == RefMetadata(
-            module='foo', name='Foo')
+        assert not issubclass(retval, CrossrefMixin)
+        assert is_crossreffed(retval)
+        assert retval._docnote_extract_metadata == Crossref(
+            module_name='foo', toplevel_name='Foo')
 
     def test_normal_reftype(self):
         """Must return a normal reftype for anything not marked as a
@@ -291,13 +292,13 @@ class TestStubbedGetattr:
         retval = _stubbed_getattr(module_name='foo', name='Foo')
         assert isinstance(retval, type)
         assert not issubclass(retval, type)
-        assert issubclass(retval, ReftypeMixin)
-        assert is_reftyped(retval)
-        assert retval._docnote_extract_metadata == RefMetadata(
-            module='foo', name='Foo')
+        assert issubclass(retval, CrossrefMixin)
+        assert is_crossreffed(retval)
+        assert retval._docnote_extract_metadata == Crossref(
+            module_name='foo', toplevel_name='Foo')
 
 
-class TestMarkSpecialReftype:
+class TestMarkSpecialCrossref:
 
     def test_both_forms(self):
         """Both the context form and decorator form must work without
@@ -322,18 +323,21 @@ class TestMarkSpecialReftype:
         """
         default_reftype_markers = _REFTYPE_MARKERS.get()
         with mark_special_reftype(
-            {RefMetadata('foo', 'Foo'): ReftypeMarker.METACLASS}
+            {Crossref(module_name='foo', toplevel_name='Foo'):
+                CrossrefMarker.METACLASS}
         ):
             with mark_special_reftype({
-                RefMetadata('bar', 'Bar'): ReftypeMarker.METACLASS,
-                RefMetadata('baz', 'Baz'): ReftypeMarker.METACLASS,
+                Crossref(module_name='bar', toplevel_name='Bar'):
+                    CrossrefMarker.METACLASS,
+                Crossref(module_name='baz', toplevel_name='Baz'):
+                    CrossrefMarker.METACLASS,
             }):
                 retval = _REFTYPE_MARKERS.get()
 
         assert set(retval) == {
-            RefMetadata(module='foo', name='Foo'),
-            RefMetadata(module='bar', name='Bar'),
-            RefMetadata(module='baz', name='Baz'),
+            Crossref(module_name='foo', toplevel_name='Foo'),
+            Crossref(module_name='bar', toplevel_name='Bar'),
+            Crossref(module_name='baz', toplevel_name='Baz'),
             *default_reftype_markers}
         assert _REFTYPE_MARKERS.get() == default_reftype_markers
 

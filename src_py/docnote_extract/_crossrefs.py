@@ -11,69 +11,118 @@ from typing import overload
 from docnote import Note
 
 
-@dataclass(slots=True)
+@dataclass(slots=True, frozen=True)
 class GetattrTraversal:
     name: str
 
 
-@dataclass(slots=True)
+@dataclass(slots=True, frozen=True)
 class CallTraversal:
     args: tuple[Any, ...]
     kwargs: dict[str, Any]
 
 
-@dataclass(slots=True)
+@dataclass(slots=True, frozen=True)
 class GetitemTraversal:
     key: Any
 
 
 @dataclass(slots=True, frozen=True)
-class RefMetadata:
-    """This class gets used to keep track of reference metadata.
+class SignatureTraversal:
+    """If you need to reference a particular signature (ie, the
+    particular overload of a function), use this. Note that you must
+    always include this when referencing parameters, even if the
+    function has only the one implementation and no overloads. In that
+    case, set the ``ordering_index`` to None.
     """
-    module: str
+    ordering_index: int | None
+
+
+@dataclass(slots=True, frozen=True)
+class ParamTraversal:
+    """If you need to reference a particular parameter within one of a
+    callable's signatures, this is how you do it.
+    """
     name: str
+
+
+@dataclass(slots=True, frozen=True, kw_only=True)
+class Crossref:
+    """A reference to something defined and/or documented elsewhere.
+    """
+    module_name: Annotated[
+        str | None,
+        Note('''The name of the module containing the reference. If the
+            reference points to a module, then this is simply the name of
+            the module. ``builtins`` indicates a built-in type.''')]
+    toplevel_name: Annotated[
+        str | None,
+        Note('''The name of the toplevel parent object within the parent
+            module. For modules, this is None.
+
+            Note that this is not the same as the cross-referenced object's
+            name within its immediate parent scope; that is included within
+            traversals.''')]
     traversals: Annotated[
-            tuple[GetattrTraversal | CallTraversal | GetitemTraversal, ...],
+            tuple[
+                GetattrTraversal
+                | CallTraversal
+                | GetitemTraversal
+                | SignatureTraversal
+                | ParamTraversal, ...],
             Note('''The traversal stack describes which extra steps were taken
-                (attribute or getitem references, or function calls) to arrive
-                at a final annotation. Empty tuples are used for plain toplevel
-                module objects.
-                ''')
+                (attribute or getitem references, function calls, parameters,
+                etc) to arrive at a final crossref. Empty tuples are used for
+                modules and their toplevel objects.''')
         ] = ()
 
 
-class Reftyped(Protocol):
-    _docnote_extract_metadata: RefMetadata
+class Crossreffed(Protocol):
+    _docnote_extract_metadata: Crossref
 
 
-class ClassWithReftypedBase(Protocol):
+class _ClassWithCrossreffedBaseProtocol(Protocol):
     _docnote_extract_base_classes: tuple[type]
 
 
-class ClassWithReftypedMetaclass(Protocol):
-    _docnote_extract_metaclass: RefMetadata
+class ClassWithCrossreffedBase(type, _ClassWithCrossreffedBaseProtocol):
+    """This pseudo-intersection type is a type subclass that includes
+    the _docnote_extract_base_classes attribute.
+    """
 
 
-def is_reftyped(obj: Any) -> TypeGuard[Reftyped]:
+class _ClassWithCrossreffedMetaclassProtocol(Protocol):
+    _docnote_extract_metaclass: Crossref
+
+
+class ClassWithCrossreffedMetaclass(
+        type, _ClassWithCrossreffedMetaclassProtocol):
+    """This pseudo-intersection type is a type subclass that includes
+    the _docnote_extract_metaclass attribute.
+    """
+
+
+def is_crossreffed(obj: Any) -> TypeGuard[Crossreffed]:
     return hasattr(obj, '_docnote_extract_metadata')
 
 
-def has_reftyped_base(obj: type) -> TypeGuard[ClassWithReftypedBase]:
+def has_crossreffed_base(obj: type) -> TypeGuard[ClassWithCrossreffedBase]:
     return hasattr(obj, '_docnote_extract_base_classes')
 
 
-def has_reftyped_metaclass(obj: type) -> TypeGuard[ClassWithReftypedMetaclass]:
+def has_crossreffed_metaclass(
+        obj: type
+        ) -> TypeGuard[ClassWithCrossreffedMetaclass]:
     return hasattr(obj, '_docnote_extract_metaclass')
 
 
-class ReftypeMetaclass(type):
+class CrossrefMetaclass(type):
     """By necessity, the reftype objects need to be actual types, and
     not instances -- otherwise, you can't subclass them. Therefore, we
     need to support __getattr__, __getitem__, etc on the class itself;
     this is responsible for that.
     """
-    _docnote_extract_metadata: RefMetadata
+    _docnote_extract_metadata: Crossref
 
     def __new__(
             metacls,
@@ -91,9 +140,9 @@ class ReftypeMetaclass(type):
         this via the __docnote_extract_traversal__ magic keyword.
         """
         # The point here is that we can discard the metaclass for anything that
-        # inherits from a ReftypeMixin. By requiring the unique keyword, which
-        # only we supply (inside make_reftype), any other class instantiations
-        # get a normal object.
+        # inherits from a CrossrefMixin. By requiring the unique keyword, which
+        # only we supply (inside make_crossreffed), any other class
+        # instantiations get a normal object.
         if __docnote_extract_traversal__:
             return super().__new__(metacls, name, bases, namespace)
         else:
@@ -102,37 +151,37 @@ class ReftypeMetaclass(type):
             # The easiest way to do this is just drop it entirely, and not try
             # to replace it with something.
             stripped_bases = tuple(
-                base for base in bases if not issubclass(base, ReftypeMixin))
+                base for base in bases if not issubclass(base, CrossrefMixin))
             cls = super().__new__(type, name, stripped_bases, namespace)
             cls._docnote_extract_base_classes = bases
             return cls
 
     def __delattr__(cls, name: str) -> None: ...
     def __setattr__(cls, name: str, value: Any) -> None: ...
-    def __getattr__(cls, name: str) -> type[ReftypeMixin]:
-        return make_reftype(
+    def __getattr__(cls, name: str) -> type[CrossrefMixin]:
+        return make_crossreffed(
             metadata=cls._docnote_extract_metadata,
             traversal=GetattrTraversal(name))
 
     def __delitem__(cls, key: Any) -> None: ...
     def __setitem__(cls, key: Any, value: Any) -> None: ...
-    def __getitem__(cls, key: Any) -> type[ReftypeMixin]:
-        return make_reftype(
+    def __getitem__(cls, key: Any) -> type[CrossrefMixin]:
+        return make_crossreffed(
             metadata=cls._docnote_extract_metadata,
             traversal=GetitemTraversal(key))
 
 
-class ReftypeMixin(
-        metaclass=ReftypeMetaclass,
+class CrossrefMixin(
+        metaclass=CrossrefMetaclass,
         # Note: this is necessary for the metaclass to actually be applied,
         # otherwise it'll be stripped from the bases tuple and be replaced
         # with a normal type instance
         __docnote_extract_traversal__=True):
-    """This is used as a mixin class when constructing Reftypes. It
+    """This is used as a mixin class when constructing Crossrefs. It
     contains the actual implementation for the magic methods that return
     more reftypes.
     """
-    _docnote_extract_metadata: ClassVar[RefMetadata]
+    _docnote_extract_metadata: ClassVar[Crossref]
 
     def __init_subclass__(cls, **kwargs):
         """We use this to suppress issues with our magic
@@ -140,18 +189,18 @@ class ReftypeMixin(
         """
         pass
 
-    def __new__(cls, *args, **kwargs) -> type[ReftypeMixin]:
+    def __new__(cls, *args, **kwargs) -> type[CrossrefMixin]:
         """We use __new__ as a stand-in for a function call. Therefore,
-        it creates a new concrete Reftype class, and returns it.
+        it creates a new concrete Crossref class, and returns it.
         """
-        return make_reftype(
+        return make_crossreffed(
             metadata=cls._docnote_extract_metadata,
             traversal=CallTraversal(args, kwargs))
 
 
-class ReftypeMetaclassMetaclass(type):
+class CrossrefMetaclassMetaclass(type):
     """This "I'm-seeing-double"-ly-named class gets used as the base
-    type for ``make_metaclass_reftype``. It does some magic to handle
+    type for ``make_metaclass_crossreffed``. It does some magic to handle
     metaclass kwargs and strip out all traces of itself, while adding
     in the bookkeeping attribute to the final class.
     """
@@ -172,10 +221,10 @@ class ReftypeMetaclassMetaclass(type):
         """
         injected_bases = (_SwallowsInitSubclassKwargs, *bases)
 
-        if not is_reftyped(metacls):
+        if not is_crossreffed(metacls):
             raise TypeError(
                 'docnote_extract internal error: concrete MetaclassMetaclass '
-                + 'is not reftyped!', metacls)
+                + 'is not crossreffed!', metacls)
 
         metaclass_metadata = metacls._docnote_extract_metadata
         cls = super().__new__(type, name, injected_bases, namespace)
@@ -185,30 +234,30 @@ class ReftypeMetaclassMetaclass(type):
 
 class _SwallowsInitSubclassKwargs:
     """We inject this as a base class for anything using the
-    ReftypeMetaclassMetaclass so that subclass kwargs can be handled
+    CrossrefMetaclassMetaclass so that subclass kwargs can be handled
     without error.
     """
 
     def __init_subclass__(cls, **kwargs): ...
 
 
-def make_metaclass_reftype(
+def make_metaclass_crossreffed(
         *,
         module: str,
         name: str,
         ) -> type:
     """Metaclass reftypes don't implement any special logic beyond
     normal types. Therefore, they don't support mock-like behavior, nor
-    traversals. However, unlike normal ``Reftype``s, they can -- as the
+    traversals. However, unlike normal ``Crossref``s, they can -- as the
     name suggests -- be used as a metaclass.
 
     They also, of course, include the ``_docnote_extract_metadata``
     attribute on the created metaclass.
     """
-    metadata = RefMetadata(module=module, name=name, traversals=())
+    metadata = Crossref(module_name=module, toplevel_name=name)
     return type(
-        'ReftypeMetaclassMetaclass',
-        (ReftypeMetaclassMetaclass,),
+        'CrossrefMetaclassMetaclass',
+        (CrossrefMetaclassMetaclass,),
         # We'll strip this out in just a second, but we need it to assign the
         # metadata for the _docnote_extract_metaclass attribute on the final
         # class object
@@ -216,40 +265,40 @@ def make_metaclass_reftype(
 
 
 @overload
-def make_reftype(*, module: str, name: str) -> type[ReftypeMixin]: ...
+def make_crossreffed(*, module: str, name: str) -> type[CrossrefMixin]: ...
 @overload
-def make_reftype(
+def make_crossreffed(
         *,
-        metadata: RefMetadata,
+        metadata: Crossref,
         traversal: GetattrTraversal | CallTraversal | GetitemTraversal
-        ) -> type[ReftypeMixin]: ...
-def make_reftype(
+        ) -> type[CrossrefMixin]: ...
+def make_crossreffed(
         *,
         module: str | None = None,
         name: str | None = None,
-        metadata: RefMetadata | None = None,
+        metadata: Crossref | None = None,
         traversal:
             GetattrTraversal | CallTraversal | GetitemTraversal | None = None,
-        ) -> type[ReftypeMixin]:
-    """This makes an actual Reftype class.
+        ) -> type[CrossrefMixin]:
+    """This makes an actual Crossref class.
     """
     if module is not None and name is not None:
-        new_metadata = RefMetadata(module=module, name=name)
+        new_metadata = Crossref(module_name=module, toplevel_name=name)
 
     elif metadata is not None and traversal is not None:
-        new_metadata = RefMetadata(
-            module=metadata.module,
-            name=metadata.name,
+        new_metadata = Crossref(
+            module_name=metadata.module_name,
+            toplevel_name=metadata.toplevel_name,
             traversals=(*metadata.traversals, traversal))
 
     else:
         raise TypeError(
-            'Invalid make_reftype call signature! (type checker failure?)')
+            'Invalid make_crossreffed call signature! (type checker failure?)')
 
     # This is separate purely so we can isolate the type: ignore
-    retval = ReftypeMetaclass(
-        'Reftype',
-        (ReftypeMixin,),
+    retval = CrossrefMetaclass(
+        'Crossref',
+        (CrossrefMixin,),
         {'_docnote_extract_metadata': new_metadata},
         __docnote_extract_traversal__=True)
     return retval  # type: ignore

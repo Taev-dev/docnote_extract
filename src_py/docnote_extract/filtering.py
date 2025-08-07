@@ -22,6 +22,10 @@ def filter_modules(
     underscore, but not ``__dunders__``). Note that this can be
     overwritten by the module's effective config's ``include_in_docs``
     setting, to force the module to be included or skipped.
+
+    Note that this must be applied **after** generating summarizations,
+    since there might be re-exports of modules filtered out of the
+    result.
     """
     effective_config = module_tree.effective_config
 

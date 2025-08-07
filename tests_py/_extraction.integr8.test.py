@@ -5,14 +5,14 @@ from unittest.mock import patch
 
 import pytest
 
-from docnote_extract._extraction import ReftypeMarker
+from docnote_extract._crossrefs import Crossref
+from docnote_extract._crossrefs import has_crossreffed_base
+from docnote_extract._crossrefs import has_crossreffed_metaclass
+from docnote_extract._crossrefs import is_crossreffed
+from docnote_extract._extraction import CrossrefMarker
 from docnote_extract._extraction import _ExtractionFinderLoader
 from docnote_extract._extraction import _ExtractionPhase
 from docnote_extract._extraction import mark_special_reftype
-from docnote_extract._reftypes import RefMetadata
-from docnote_extract._reftypes import has_reftyped_base
-from docnote_extract._reftypes import has_reftyped_metaclass
-from docnote_extract._reftypes import is_reftyped
 
 import docnote_extract_testpkg
 import docnote_extract_testpkg._hand_rolled
@@ -83,7 +83,7 @@ class TestExtractionFinderLoader:
             try:
                 testpkg = importlib.import_module('docnote_extract_testutils')
                 assert 'docnote_extract_testutils' in sys.modules
-                assert is_reftyped(testpkg)
+                assert is_crossreffed(testpkg)
             finally:
                 floader._unstash_prehook_modules()
         finally:
@@ -93,7 +93,7 @@ class TestExtractionFinderLoader:
         assert testpkg is not docnote_extract_testutils
         testpkg_reloaded = importlib.import_module('docnote_extract_testutils')
         assert testpkg_reloaded is not testpkg
-        assert not is_reftyped(testpkg_reloaded)
+        assert not is_crossreffed(testpkg_reloaded)
 
     @set_phase(_ExtractionPhase.EXTRACTION)
     @set_inspection('docnote_extract_testpkg._hand_rolled')
@@ -122,7 +122,7 @@ class TestExtractionFinderLoader:
                     'docnote_extract_testpkg._hand_rolled')
                 assert testpkg is not docnote_extract_testpkg._hand_rolled
                 assert 'docnote_extract_testpkg._hand_rolled' in sys.modules
-                assert not is_reftyped(testpkg)
+                assert not is_crossreffed(testpkg)
                 assert testpkg.SOME_CONSTANT == 7
             finally:
                 floader._unstash_prehook_modules()
@@ -147,9 +147,9 @@ class TestExtractionFinderLoader:
             'docnote_extract_testpkg._hand_rolled.imports_3p_metaclass'])
         # Don't forget to mark this, or we won't do anything!
         with mark_special_reftype({
-            RefMetadata(
-                'docnote_extract_testutils.for_handrolled',
-                'ThirdpartyMetaclass'): ReftypeMarker.METACLASS
+            Crossref(
+                module_name='docnote_extract_testutils.for_handrolled',
+                toplevel_name='ThirdpartyMetaclass'): CrossrefMarker.METACLASS
         }):
             floader = _ExtractionFinderLoader(
                 frozenset({'docnote_extract_testpkg'}),
@@ -164,9 +164,9 @@ class TestExtractionFinderLoader:
 
         to_inspect = retval[
             'docnote_extract_testpkg._hand_rolled.imports_3p_metaclass']
-        assert not is_reftyped(to_inspect)
-        assert not is_reftyped(to_inspect.Uses3pMetaclass)
-        assert has_reftyped_metaclass(to_inspect.Uses3pMetaclass)
+        assert not is_crossreffed(to_inspect)
+        assert not is_crossreffed(to_inspect.Uses3pMetaclass)
+        assert has_crossreffed_metaclass(to_inspect.Uses3pMetaclass)
 
     @patch('docnote_extract._extraction.discover_all_modules', autospec=True)
     @purge_cached_testpkg_modules
@@ -194,9 +194,9 @@ class TestExtractionFinderLoader:
 
         to_inspect = retval[
             'docnote_extract_testpkg._hand_rolled.subclasses_3p_class']
-        assert not is_reftyped(to_inspect)
-        assert not is_reftyped(to_inspect.Uses3pBaseclass)
-        assert has_reftyped_base(to_inspect.Uses3pBaseclass)
+        assert not is_crossreffed(to_inspect)
+        assert not is_crossreffed(to_inspect.Uses3pBaseclass)
+        assert has_crossreffed_base(to_inspect.Uses3pBaseclass)
 
     @patch('docnote_extract._extraction.discover_all_modules', autospec=True)
     @purge_cached_testpkg_modules
@@ -224,8 +224,8 @@ class TestExtractionFinderLoader:
 
         to_inspect = retval[
             'docnote_extract_testpkg._hand_rolled.imports_from_parent']
-        assert not is_reftyped(to_inspect)
-        assert is_reftyped(to_inspect.SOME_CONSTANT)
+        assert not is_crossreffed(to_inspect)
+        assert is_crossreffed(to_inspect.SOME_CONSTANT)
 
     @patch('docnote_extract._extraction.discover_all_modules', autospec=True)
     @purge_cached_testpkg_modules
@@ -257,9 +257,9 @@ class TestExtractionFinderLoader:
         to_inspect = retval[
             'docnote_extract_testpkg._hand_rolled.imports_from_parent']
 
-        assert not is_reftyped(to_inspect)
-        assert not is_reftyped(to_inspect.SOME_CONSTANT)
-        assert not is_reftyped(to_inspect.RENAMED_SENTINEL)
+        assert not is_crossreffed(to_inspect)
+        assert not is_crossreffed(to_inspect.SOME_CONSTANT)
+        assert not is_crossreffed(to_inspect.RENAMED_SENTINEL)
 
         registry = to_inspect._docnote_extract_import_tracking_registry
         assert id(to_inspect.RENAMED_SENTINEL) in registry
@@ -297,10 +297,10 @@ class TestExtractionFinderLoader:
         retval = floader.discover_and_extract()
 
         to_inspect = retval['docnote_extract_testpkg._hand_rolled.relativity']
-        assert not is_reftyped(to_inspect)
-        assert is_reftyped(to_inspect.SOME_CONSTANT)
-        assert is_reftyped(to_inspect.ROOT_VAR)
-        assert is_reftyped(to_inspect.func_with_config)
+        assert not is_crossreffed(to_inspect)
+        assert is_crossreffed(to_inspect.SOME_CONSTANT)
+        assert is_crossreffed(to_inspect.ROOT_VAR)
+        assert is_crossreffed(to_inspect.func_with_config)
 
     @patch('docnote_extract._extraction.discover_all_modules', autospec=True)
     @purge_cached_testpkg_modules
@@ -328,7 +328,7 @@ class TestExtractionFinderLoader:
 
         mod_name = 'docnote_extract_testpkg._hand_rolled.uses_import_names'
         to_inspect = retval[mod_name]
-        assert not is_reftyped(to_inspect)
+        assert not is_crossreffed(to_inspect)
         assert isinstance(to_inspect.FILE, str)
         assert isinstance(to_inspect.SPEC, ModuleSpec)
         assert to_inspect.NAME == mod_name
