@@ -46,6 +46,14 @@ class ParamTraversal:
     name: str
 
 
+type _CrossrefTraversal = (
+    GetattrTraversal
+    | CallTraversal
+    | GetitemTraversal
+    | SignatureTraversal
+    | ParamTraversal)
+
+
 @dataclass(slots=True, frozen=True, kw_only=True)
 class Crossref:
     """A reference to something defined and/or documented elsewhere.
@@ -64,17 +72,18 @@ class Crossref:
             name within its immediate parent scope; that is included within
             traversals.''')]
     traversals: Annotated[
-            tuple[
-                GetattrTraversal
-                | CallTraversal
-                | GetitemTraversal
-                | SignatureTraversal
-                | ParamTraversal, ...],
+            tuple[_CrossrefTraversal, ...],
             Note('''The traversal stack describes which extra steps were taken
                 (attribute or getitem references, function calls, parameters,
                 etc) to arrive at a final crossref. Empty tuples are used for
                 modules and their toplevel objects.''')
         ] = ()
+
+    def __truediv__(self, traversal: _CrossrefTraversal) -> Crossref:
+        return Crossref(
+            module_name=self.module_name,
+            toplevel_name=self.toplevel_name,
+            traversals=(*self.traversals, traversal))
 
 
 class Crossreffed(Protocol):

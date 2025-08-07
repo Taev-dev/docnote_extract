@@ -6,9 +6,9 @@ from docnote import DocnoteConfig
 from docnote import Note
 
 from docnote_extract._extraction import ModulePostExtraction
-from docnote_extract._types import Singleton
 from docnote_extract.discovery import ModuleTreeNode
 from docnote_extract.normalization import NormalizedObj
+from docnote_extract.normalization import TypeSpec
 from docnote_extract.normalization import normalize_module_dict
 
 from docnote_extract_testutils.fixtures import purge_cached_testpkg_modules
@@ -76,7 +76,7 @@ class TestNormalizeModuleMembers:
 
         norm_note = normalized['Note']
         assert not norm_note.annotateds
-        assert norm_note.type_ is Singleton.MISSING
+        assert norm_note.typespec is None
         assert norm_note.canonical_module == \
             'docnote_extract_testpkg.taevcode.docnote'
         assert norm_note.canonical_name == 'Note'
@@ -108,7 +108,8 @@ class TestNormalizeModuleMembers:
 
         norm_cfg_attr = normalized['DOCNOTE_CONFIG_ATTR']
         assert not norm_cfg_attr.annotateds
-        assert norm_cfg_attr.type_ is str
+        assert norm_cfg_attr.typespec == TypeSpec.from_typehint(
+            str)
         assert len(norm_cfg_attr.notes) == 1
         note, = norm_cfg_attr.notes
         assert note.value.startswith('Docs generation libraries should use ')
@@ -141,7 +142,8 @@ class TestNormalizeModuleMembers:
 
         clcnote_attr = normalized['ClcNote']
         assert not clcnote_attr.annotateds
-        assert clcnote_attr.type_ == Callable[[str], Note]
+        assert clcnote_attr.typespec == TypeSpec.from_typehint(
+            Callable[[str], Note])  # type: ignore
         assert not clcnote_attr.notes
         assert clcnote_attr.effective_config == DocnoteConfig(
             include_in_docs=False)
@@ -174,7 +176,8 @@ class TestNormalizeModuleMembers:
 
         clcnote_attr = normalized['ClcNote']
         assert not clcnote_attr.annotateds
-        assert clcnote_attr.type_ == Callable[[str], Note]
+        assert clcnote_attr.typespec == TypeSpec.from_typehint(
+            Callable[[str], Note])  # type: ignore
         assert not clcnote_attr.notes
         assert clcnote_attr.effective_config == DocnoteConfig(
             include_in_docs=False,
@@ -207,7 +210,7 @@ class TestNormalizeModuleMembers:
 
         func_attr = normalized['func_with_config']
         assert not func_attr.annotateds
-        assert func_attr.type_ is Singleton.MISSING
+        assert func_attr.typespec is None
         assert not func_attr.notes
         assert func_attr.effective_config == DocnoteConfig(
             include_in_docs=False)

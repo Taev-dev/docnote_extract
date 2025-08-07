@@ -3,13 +3,15 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from types import ModuleType
+from types import UnionType
 from typing import Annotated
 from typing import Any
 from typing import Literal
+from typing import TypeAliasType
 from typing import cast
+from typing import get_args as get_generic_args
 from typing import get_origin
 from typing import get_type_hints
-from typing import overload
 
 from docnote import DOCNOTE_CONFIG_ATTR
 from docnote import DocnoteConfig
@@ -53,17 +55,17 @@ def normalize_namespace_item(
         annotateds=normalized_annotation.annotateds,
         effective_config=DocnoteConfig(**config_params),
         notes=normalized_annotation.notes,
-        type_=normalized_annotation.type_,
+        typespec=normalized_annotation.typespec,
         canonical_module=None,
         canonical_name=None)
 
 
 @dataclass(slots=True)
 class NormalizedAnnotation:
-    type_: Any | Literal[Singleton.MISSING]
+    typespec: TypeSpec | None
     notes: tuple[Note, ...]
     config_params: DocnoteConfigParams
-    annotateds: tuple[LazyResolvingAnnotated, ...]
+    annotateds: tuple[LazyResolvingValue, ...]
 
 
 def normalize_annotation(
@@ -79,13 +81,13 @@ def normalize_annotation(
     """
     if annotation is Singleton.MISSING:
         return NormalizedAnnotation(
-            type_=Singleton.MISSING,
+            typespec=None,
             notes=(),
             config_params={},
             annotateds=())
     if is_crossreffed(annotation):
         return NormalizedAnnotation(
-            type_=annotation,
+            typespec=TypeSpec.from_typehint(annotation),
             notes=(),
             config_params={},
             annotateds=())
@@ -115,7 +117,7 @@ def normalize_annotation(
             external_annotateds.append(annotation)
 
     return NormalizedAnnotation(
-        type_=type_,
+        typespec=TypeSpec.from_typehint(type_),
         notes=tuple(notes),
         config_params=config_params,
         annotateds=tuple(external_annotateds))
@@ -130,6 +132,8 @@ def normalize_module_dict(  # noqa: C901, PLR0912
                     module tree, and not just the node for the current module!
                     ''')]
         ) -> dict[str, NormalizedObj]:
+    """TODO: can this be DRY'ed up via ``normalize_annotation``?
+    """
     from_annotations: dict[str, Any] = get_type_hints(
         module, include_extras=True)
     dunder_all: set[str] = set(getattr(module, '__all__', ()))
@@ -207,7 +211,10 @@ def normalize_module_dict(  # noqa: C901, PLR0912
             annotateds=tuple(external_annotateds),
             effective_config=DocnoteConfig(**config_params),
             notes=tuple(notes),
-            type_=type_,
+            typespec=
+                TypeSpec.from_typehint(type_)
+                if type_ is not Singleton.MISSING
+                else None,
             canonical_module=canonical_module,
             canonical_name=canonical_name)
 
@@ -333,14 +340,10 @@ class NormalizedObj:
                 object, layered on top of any stackable config items from
                 parent scope(s).''')]
     annotateds: tuple[object, ...]
-    type_: Annotated[
-            Any | Literal[Singleton.MISSING],
-            Note('''This might be a literal value, as is the case with
-                builtins and nostub modules. It might also be a ``RefType``
-                stub. Or it could be some combination thereof, depending on
-                how the nostub import cascade plays out.
-
-                Or, of course, it could just be missing!''')]
+    typespec: Annotated[
+            TypeSpec | None,
+            Note('''This is a normalized representation of the type that was
+                declared on the object.''')]
 
     # Where the value was declared. String if known (because it had a
     # __module__ or it had a docnote). None if not applicable, because the
@@ -357,9 +360,95 @@ class NormalizedObj:
             + f'({self.canonical_module=}, {self.canonical_name=})')
 
 
-@dataclass(slots=True, frozen=True, kw_only=True)
-class LazyResolvingAnnotated:
-    _ref_metadata: Crossref
+@dataclass(slots=True, frozen=True)
+class TypeSpec:
+    """This is used as a container for ``NormalizedType``s. At the
+    moment, it's pretty simple: just a tuple to expand out unions.
+    This remains private, though, because if and when python introduces
+    an intersection type, this will get a whole lot more complicated.
+    """
+    _types: tuple[NormalizedType, ...]
+
+    def __format__(self, fmtinfo: str) -> str:
+        """If you don't want to actually resolve the annotation, and you
+        just want to stringify it, then use normal string formatting.
+        """
+        raise NotImplementedError
+
+    @classmethod
+    def from_typehint(
+            cls,
+            typehint: Crossreffed | type | TypeAliasType | UnionType | list
+            ) -> TypeSpec:
+        """Converts an extracted type hint into a NormalizedType
+        instance.
+
+        TODO: this needs a way to (either optionally or automatically)
+        expand private type aliases.
+        """
+        if is_crossreffed(typehint):
+            return cls((NormalizedType(typehint._docnote_extract_metadata),))
+
+        elif isinstance(typehint, UnionType):
+            norm_types = set()
+            for union_member in typehint.__args__:
+                norm_types.update(cls.from_typehint(union_member)._types)
+            return cls(tuple(norm_types))
+
+        elif isinstance(typehint, TypeAliasType):
+            return cls((NormalizedType(Crossref(
+                module_name=typehint.__module__,
+                toplevel_name=typehint.__name__)),))
+
+        # This is the case in some special forms, like the argspec for
+        # callables
+        elif isinstance(typehint, list):
+            return cls((NormalizedType(
+                primary=None,
+                params=tuple(
+                    TypeSpec.from_typehint(generic_arg)
+                    for generic_arg in typehint)),))
+
+        else:
+            origin = get_origin(typehint)
+            # Non-generics
+            if origin is None:
+                # This is necessary because we're using TypeGuard instead of
+                # TypeIs so that we can have pseudo-intersections.
+                typehint = cast(type, typehint)
+                return cls((NormalizedType(Crossref(
+                    module_name=typehint.__module__,
+                    toplevel_name=typehint.__name__)),))
+
+            # Generics
+            else:
+                return cls((NormalizedType(
+                    primary=origin,
+                    params=tuple(
+                        TypeSpec.from_typehint(generic_arg)
+                        for generic_arg in get_generic_args(typehint))),))
+
+
+@dataclass(slots=True, frozen=True)
+class NormalizedType:
+    """This is used for all type annotations after normalization.
+    """
+    # None is used for some special forms (for example, the argspec for
+    # callables)
+    primary: Crossref | None
+    params: tuple[TypeSpec, ...] = ()
+
+
+@dataclass(slots=True, frozen=True)
+class LazyResolvingValue:
+    _crossref: Crossref | None
+    _value: None | Any
+
+    def __format__(self, fmtinfo: str) -> str:
+        """If you don't want to actually resolve the annotation, and you
+        just want to stringify it, then use normal string formatting.
+        """
+        raise NotImplementedError
 
     def __call__(self) -> Any:
         """Resolves the actual annotation. Note that the import hook
@@ -367,27 +456,28 @@ class LazyResolvingAnnotated:
         """
         raise NotImplementedError
 
-    @overload
     @classmethod
-    def from_annotated(cls, annotated: Crossreffed) -> LazyResolvingAnnotated:
-        ...
-    @overload
-    @classmethod
-    def from_annotated[T](cls, annotated: T) -> T: ...
-    @classmethod
-    def from_annotated[T](
+    def from_annotated(
             cls,
-            annotated: T | Crossreffed
-            ) -> T | LazyResolvingAnnotated:
+            annotated: Crossreffed | Any
+            ) -> LazyResolvingValue:
         """Converts a reftype-based ``Annotated[]`` member into a
-        ``LazyResolvingAnnotated`` instance. If the member was not
+        ``LazyResolvingValue`` instance. If the member was not
         a reftype, returns the value back.
 
         TODO: this should recurse into containers.
         """
         if is_crossreffed(annotated):
-            return cls(_ref_metadata=annotated._docnote_extract_metadata)
+            return cls(
+                _crossref=annotated._docnote_extract_metadata,
+                _value=None)
         else:
-            # This is necessary because we're using TypeGuard instead of
-            # TypeIs so that we can have pseudo-intersections.
-            return cast(T, annotated)
+            return cls(
+                _crossref=None,
+                _value=annotated)
+
+    def __post_init__(self):
+        if not ((self._crossref is None) ^ (self._value is None)):
+            raise TypeError(
+                'LazyResolvingValue can only have a crossref xor value!',
+                self)
