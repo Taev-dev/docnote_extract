@@ -12,6 +12,7 @@ from docnote_extract.filtering import filter_inclusion_rules
 from docnote_extract.filtering import filter_module_members
 from docnote_extract.filtering import filter_modules
 from docnote_extract.normalization import NormalizedObj
+from docnote_extract.normalization import TypeSpec
 
 
 class TestFilterModules:
@@ -167,7 +168,7 @@ class TestFilterModuleMembers:
                 (),
                 DocnoteConfig(),
                 (),
-                int,
+                TypeSpec.from_typehint(int),
                 canonical_module=Singleton.UNKNOWN,
                 canonical_name=Singleton.UNKNOWN)}
 
@@ -186,7 +187,7 @@ class TestFilterModuleMembers:
                 (),
                 DocnoteConfig(),
                 (),
-                int,
+                TypeSpec.from_typehint(int),
                 canonical_module=Singleton.UNKNOWN,
                 canonical_name=Singleton.UNKNOWN)}
 
@@ -205,7 +206,7 @@ class TestFilterModuleMembers:
                 (),
                 DocnoteConfig(),
                 (),
-                int,
+                TypeSpec.from_typehint(int),
                 # Not realistic -- we'd have no way of knowing where an int
                 # was from -- but good enough for this test
                 canonical_module='foo',
@@ -227,7 +228,7 @@ class TestFilterModuleMembers:
                 (),
                 DocnoteConfig(),
                 (),
-                int,
+                TypeSpec.from_typehint(int),
                 # Not realistic -- we'd have no way of knowing where an int
                 # was from -- but good enough for this test
                 canonical_module='oof',
@@ -249,7 +250,7 @@ class TestFilterModuleMembers:
                 (),
                 DocnoteConfig(include_in_docs=True),
                 (),
-                int,
+                TypeSpec.from_typehint(int),
                 # Not realistic -- we'd have no way of knowing where an int
                 # was from -- but good enough for this test
                 canonical_module='oof',
@@ -272,7 +273,7 @@ class TestFilterInclusionRules:
                 (),
                 DocnoteConfig(),
                 (),
-                int,
+                TypeSpec.from_typehint(int),
                 canonical_module=Singleton.UNKNOWN,
                 canonical_name=Singleton.UNKNOWN)}
 
@@ -290,7 +291,7 @@ class TestFilterInclusionRules:
                 (),
                 DocnoteConfig(),
                 (),
-                int,
+                TypeSpec.from_typehint(int),
                 canonical_module=Singleton.UNKNOWN,
                 canonical_name=Singleton.UNKNOWN),
             '_bar': NormalizedObj(
@@ -298,7 +299,7 @@ class TestFilterInclusionRules:
                 (),
                 DocnoteConfig(),
                 (),
-                int,
+                TypeSpec.from_typehint(int),
                 canonical_module=Singleton.UNKNOWN,
                 canonical_name=Singleton.UNKNOWN),}
 
@@ -318,7 +319,7 @@ class TestFilterInclusionRules:
                 (),
                 DocnoteConfig(),
                 (),
-                int,
+                TypeSpec.from_typehint(int),
                 canonical_module=Singleton.UNKNOWN,
                 canonical_name=Singleton.UNKNOWN),
             '_bar': NormalizedObj(
@@ -326,7 +327,7 @@ class TestFilterInclusionRules:
                 (),
                 DocnoteConfig(include_in_docs=True),
                 (),
-                int,
+                TypeSpec.from_typehint(int),
                 canonical_module=Singleton.UNKNOWN,
                 canonical_name=Singleton.UNKNOWN),}
 
@@ -346,7 +347,7 @@ class TestFilterInclusionRules:
                 (),
                 DocnoteConfig(include_in_docs=False),
                 (),
-                int,
+                TypeSpec.from_typehint(int),
                 canonical_module=Singleton.UNKNOWN,
                 canonical_name=Singleton.UNKNOWN),
             '_bar': NormalizedObj(
@@ -354,7 +355,7 @@ class TestFilterInclusionRules:
                 (),
                 DocnoteConfig(),
                 (),
-                int,
+                TypeSpec.from_typehint(int),
                 canonical_module=Singleton.UNKNOWN,
                 canonical_name=Singleton.UNKNOWN),}
 
