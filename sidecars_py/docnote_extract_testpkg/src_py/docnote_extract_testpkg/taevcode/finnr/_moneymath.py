@@ -8,7 +8,7 @@
 #            pkg_name='finnr',
 #            offset_dest_root_dir='taevcode',
 #            root_path='src_py/finnr',
-#            commit_hash='2a3cfc82a0ce3ab7fe3467e96d34238d87399745',
+#            commit_hash='5a58ed0fc95b068ae396ce3adea91ca66cabe169',
 #            license_paths=set())
 
 # The license of the original project is included in the top level of

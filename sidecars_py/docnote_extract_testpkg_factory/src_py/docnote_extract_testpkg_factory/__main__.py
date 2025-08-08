@@ -514,16 +514,18 @@ def get_archive_url(src_spec: PkgSrcSpec) -> str:
 
 
 SOURCES: list[PkgSrcSpec] = [
-    PkgSrcSpec(
-        repo_id='Taev-dev/docnote',
-        pkg_name='docnote',
-        root_path='src_py/docnote',
-        # Note: we're only offsetting these so we can play around with
-        # nesting configs
-        offset_dest_root_dir='taevcode',
-        commit_hash='7d4b0f7b8c13f4a952dba41f722ca9de0479e562',
-        license_paths=set(),
-        ),
+    # This is causing a bunch of problems because its docnotes, configs, etc
+    # aren't from the "real" docnote package.
+    # PkgSrcSpec(
+    #     repo_id='Taev-dev/docnote',
+    #     pkg_name='docnote',
+    #     root_path='src_py/docnote',
+    #     # Note: we're only offsetting these so we can play around with
+    #     # nesting configs
+    #     offset_dest_root_dir='taevcode',
+    #     commit_hash='7d4b0f7b8c13f4a952dba41f722ca9de0479e562',
+    #     license_paths=set(),
+    #     ),
     PkgSrcSpec(
         repo_id='Taev-dev/finnr',
         pkg_name='finnr',
@@ -531,7 +533,7 @@ SOURCES: list[PkgSrcSpec] = [
         # Note: we're only offsetting these so we can play around with
         # nesting configs
         offset_dest_root_dir='taevcode',
-        commit_hash='2a3cfc82a0ce3ab7fe3467e96d34238d87399745',
+        commit_hash='5a58ed0fc95b068ae396ce3adea91ca66cabe169',
         license_paths=set()),
     # This is a biiiiig repo, I don't think we want to use it
     # PkgSrcSpec(

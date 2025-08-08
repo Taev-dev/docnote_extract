@@ -8,7 +8,7 @@
 #            pkg_name='finnr',
 #            offset_dest_root_dir='taevcode',
 #            root_path='src_py/finnr',
-#            commit_hash='2a3cfc82a0ce3ab7fe3467e96d34238d87399745',
+#            commit_hash='5a58ed0fc95b068ae396ce3adea91ca66cabe169',
 #            license_paths=set())
 
 # The license of the original project is included in the top level of
@@ -21,6 +21,7 @@
 from __future__ import annotations
 import operator
 import typing
+from collections.abc import Callable
 from dataclasses import dataclass
 from decimal import ROUND_HALF_UP
 from decimal import Decimal
@@ -31,7 +32,7 @@ from finnr._moneymath import MoneyMathImpl
 if typing.TYPE_CHECKING:
     from finnr.currency import Currency
 amount_getter: Annotated[
-    operator.attrgetter[Decimal],
+    Callable[[Money], Decimal],
     ClcNote('''The ``amount_getter`` is a convenience method for use in
         ``min``, ``max``, sorting, etc. Use it instead of defining a lambda
         for every comparison:

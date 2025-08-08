@@ -29,18 +29,14 @@ class TestNormalizeModuleMembers:
         """
         docnote = cast(
             ModulePostExtraction,
-            import_module('docnote_extract_testpkg.taevcode.docnote'))
+            import_module('docnote_extract_testutils.fixtures'))
         docnote._docnote_extract_import_tracking_registry = {}
         module_tree = ModuleTreeNode(
-            'docnote_extract_testpkg',
-            'docnote_extract_testpkg',
+            'docnote_extract_testutils',
+            'docnote_extract_testutils',
             {'taevcode': ModuleTreeNode(
-                'docnote_extract_testpkg.taevcode',
-                'taevcode',
-                {'docnote': ModuleTreeNode(
-                    'docnote_extract_testpkg.taevcode.docnote',
-                    'docnote',
-                    effective_config=DocnoteConfig())},
+                'docnote_extract_testutils.fixtures',
+                'fixtures',
                 effective_config=DocnoteConfig())},
             effective_config=DocnoteConfig())
 
@@ -57,29 +53,25 @@ class TestNormalizeModuleMembers:
         """
         docnote = cast(
             ModulePostExtraction,
-            import_module('docnote_extract_testpkg.taevcode.docnote'))
+            import_module('docnote_extract_testpkg._hand_rolled'))
         docnote._docnote_extract_import_tracking_registry = {}
         module_tree = ModuleTreeNode(
             'docnote_extract_testpkg',
             'docnote_extract_testpkg',
             {'taevcode': ModuleTreeNode(
-                'docnote_extract_testpkg.taevcode',
-                'taevcode',
-                {'docnote': ModuleTreeNode(
-                    'docnote_extract_testpkg.taevcode.docnote',
-                    'docnote',
-                    effective_config=DocnoteConfig())},
+                'docnote_extract_testpkg._hand_rolled',
+                '_hand_rolled',
                 effective_config=DocnoteConfig())},
             effective_config=DocnoteConfig())
 
         normalized = normalize_module_dict(docnote, module_tree)
 
-        norm_note = normalized['Note']
-        assert not norm_note.annotateds
-        assert norm_note.typespec is None
-        assert norm_note.canonical_module == \
-            'docnote_extract_testpkg.taevcode.docnote'
-        assert norm_note.canonical_name == 'Note'
+        norm_cls = normalized['ThisGetsUsedToTestNormalization']
+        assert not norm_cls.annotateds
+        assert norm_cls.typespec is None
+        assert norm_cls.canonical_module == \
+            'docnote_extract_testpkg._hand_rolled'
+        assert norm_cls.canonical_name == 'ThisGetsUsedToTestNormalization'
 
     @purge_cached_testpkg_modules
     def test_note(self):
