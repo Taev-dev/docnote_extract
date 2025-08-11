@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 from collections.abc import Callable
 
 from docnote_extract._extraction import ModulePostExtraction
@@ -107,17 +108,34 @@ def filter_inclusion_rules(
 
     for name, normalized_obj in normalized_objs.items():
         effective_config = normalized_obj.effective_config
-        if (
-            effective_config.include_in_docs is False
-            or (
-                _conventionally_private(name)
-                and not effective_config.include_in_docs)
+        if effective_config.include_in_docs is False:
+            continue
+        # Dunders need special handling, because otherwise they generate a LOT
+        # of noise.
+        # We want to restrict the returned members to things that were actually
+        # defined by the library being documented, not things that are coming
+        # directly from the stdlib.
+        elif _is_dunder(name):
+            if (
+                normalized_obj.canonical_module is None
+                or normalized_obj.canonical_module is Singleton.UNKNOWN
+                or normalized_obj.canonical_module in sys.stdlib_module_names
+            ):
+                continue
+
+        elif (
+            _conventionally_private(name)
+            and not effective_config.include_in_docs
         ):
             continue
 
         retval[name] = normalized_obj
 
     return retval
+
+
+def _is_dunder(name: str) -> bool:
+    return name.startswith('__') and name.endswith('__')
 
 
 def _conventionally_private(name: str) -> bool:
@@ -133,6 +151,4 @@ def _conventionally_private(name: str) -> bool:
     # But more seriously, this is faster to write, faster to read, and -- at
     # least naively -- I would assume it's also a bit faster, since we're not
     # dealing with an entire regex engine.
-    return (
-        name.startswith('_')
-        and not (name.startswith('__') and name.endswith('__')))
+    return name.startswith('_') and not _is_dunder(name)

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Callable
+
 import pytest
 from docnote import DocnoteConfig
 
@@ -8,6 +10,7 @@ from docnote_extract._types import Singleton
 from docnote_extract.discovery import ModuleTreeNode
 from docnote_extract.discovery import ModuleTreeNodeHydrated
 from docnote_extract.filtering import _conventionally_private
+from docnote_extract.filtering import _is_dunder
 from docnote_extract.filtering import filter_inclusion_rules
 from docnote_extract.filtering import filter_module_members
 from docnote_extract.filtering import filter_modules
@@ -364,6 +367,76 @@ class TestFilterInclusionRules:
         assert 'foo' not in retval
         assert '_bar' not in retval
 
+    def test_dunder_included(self):
+        """Absent any config overrides, dunders with a known module
+        outside of the stdlib must be included in the result.
+        """
+        normalized_objs = {
+            '__add__': NormalizedObj(
+                lambda other: other + 9,
+                (),
+                DocnoteConfig(),
+                (),
+                TypeSpec.from_typehint(Callable[[int], int]),  # type: ignore
+                canonical_module='foo',
+                # A little non-intuitive, but I believe this would be correct,
+                # even for a hypothetical class like foo:Bar.__add__
+                canonical_name='__add__'),
+            '__foo__': NormalizedObj(
+                lambda other: other + 9,
+                (),
+                DocnoteConfig(),
+                (),
+                TypeSpec.from_typehint(Callable[[int], int]),  # type: ignore
+                canonical_module='foo',
+                # A little non-intuitive, but I believe this would be correct,
+                # even for a hypothetical class like foo:Bar.__foo__
+                canonical_name='__foo__'),}
+
+        retval = filter_inclusion_rules(normalized_objs)
+
+        assert '__add__' in retval
+        assert '__foo__' in retval
+
+    def test_dunder_excluded(self):
+        """Absent any config overrides, dunders without a known module,
+        or with a module source from within the stdlib, must be excluded
+        from the result.
+        """
+        normalized_objs = {
+            '__dir__': NormalizedObj(
+                lambda: True,
+                (),
+                DocnoteConfig(),
+                (),
+                TypeSpec.from_typehint(Callable[[], bool]),  # type: ignore
+                canonical_module=None,
+                canonical_name='__dir__'),
+            '__init__': NormalizedObj(
+                lambda: True,
+                (),
+                DocnoteConfig(),
+                (),
+                TypeSpec.from_typehint(Callable[[], bool]),  # type: ignore
+                canonical_module='typing',
+                # Fun fact: this is what you get from a protocol __init__ if
+                # you don't declare one within the protocol
+                canonical_name='_no_init_or_replace_init'),
+            '__foo__': NormalizedObj(
+                lambda: True,
+                (),
+                DocnoteConfig(),
+                (),
+                TypeSpec.from_typehint(Callable[[], bool]),  # type: ignore
+                canonical_module=Singleton.UNKNOWN,
+                canonical_name=Singleton.UNKNOWN),}
+
+        retval = filter_inclusion_rules(normalized_objs)
+
+        assert '__dir__' not in retval
+        assert '__init__' not in retval
+        assert '__foo__' not in retval
+
 
 @pytest.mark.parametrize(
     'name,expected_retval',
@@ -378,3 +451,17 @@ def test_conventionally_private(name: str, expected_retval):
     convention.
     """
     assert _conventionally_private(name) == expected_retval
+
+
+@pytest.mark.parametrize(
+    'name,expected_retval',
+    [
+        ('_foo', False),
+        ('__foo', False),
+        ('__foo__', True),
+        ('foo', False),
+        ('foo_', False),])
+def test_is_dunder(name: str, expected_retval):
+    """Spot-checks: _is_dunder() must actually match the convention.
+    """
+    assert _is_dunder(name) == expected_retval
