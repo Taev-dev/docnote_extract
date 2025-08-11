@@ -74,6 +74,34 @@ class TestNormalizeModuleMembers:
         assert norm_cls.canonical_name == 'ThisGetsUsedToTestNormalization'
 
     @purge_cached_testpkg_modules
+    def test_bare_annotation(self):
+        """A bare annotation defined within the current module must be
+        included and assigned the correct canonical origin.
+        """
+        docnote = cast(
+            ModulePostExtraction,
+            import_module('docnote_extract_testpkg._hand_rolled'))
+        docnote._docnote_extract_import_tracking_registry = {}
+        module_tree = ModuleTreeNode(
+            'docnote_extract_testpkg',
+            'docnote_extract_testpkg',
+            {'taevcode': ModuleTreeNode(
+                'docnote_extract_testpkg._hand_rolled',
+                '_hand_rolled',
+                effective_config=DocnoteConfig())},
+            effective_config=DocnoteConfig())
+
+        normalized = normalize_module_dict(docnote, module_tree)
+
+        assert 'bare_annotation' in normalized
+        norm_bare_anno = normalized['bare_annotation']
+        assert not norm_bare_anno.annotateds
+        assert norm_bare_anno.typespec == TypeSpec.from_typehint(str)
+        assert norm_bare_anno.canonical_module == \
+            'docnote_extract_testpkg._hand_rolled'
+        assert norm_bare_anno.canonical_name == 'bare_annotation'
+
+    @purge_cached_testpkg_modules
     def test_note(self):
         """A value defined within the module that contains a ``Note``
         annotation must include it within the normalized object's note

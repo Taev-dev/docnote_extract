@@ -2,9 +2,13 @@
 # stubs applied to it.
 SOME_CONSTANT = 7
 SOME_SENTINEL = object()
+bare_annotation: str
 
 
 class ThisGetsUsedToTestNormalization:
     """Normalization needs a class defined within a module that doesn't
     import anything that needs to be stubbed. Here we go!
     """
+
+    foo: int
+    bar: float

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import itertools
 import logging
 from dataclasses import dataclass
 from types import ModuleType
@@ -56,7 +57,7 @@ def normalize_namespace_item(
         effective_config=DocnoteConfig(**config_params),
         notes=normalized_annotation.notes,
         typespec=normalized_annotation.typespec,
-        canonical_module=None,
+        canonical_module=getattr(value, '__module__', Singleton.UNKNOWN),
         canonical_name=None)
 
 
@@ -139,7 +140,18 @@ def normalize_module_dict(  # noqa: C901, PLR0912
     dunder_all: set[str] = set(getattr(module, '__all__', ()))
     retval: dict[str, NormalizedObj] = {}
 
-    for name, obj in module.__dict__.items():
+    # Note that, though rare, it's theoretically possible for values to appear
+    # in a module's annotations but not its __dict__. (This is much more common
+    # for classes, but syntactically valid here, and might be used to surface
+    # some kind of docnote or something.)
+    bare_annotations = {
+        name: Singleton.MISSING for name in from_annotations
+        if name not in module.__dict__}
+
+    for name, obj in itertools.chain(
+        module.__dict__.items(),
+        bare_annotations.items()
+    ):
         canonical_module, canonical_name = _get_or_infer_canonical_origin(
             name,
             obj,
@@ -239,6 +251,9 @@ def _get_or_infer_canonical_origin(
     """
     if isinstance(obj, ModuleType):
         return None, None
+
+    if obj is Singleton.MISSING:
+        return containing_module, name_in_containing_module
 
     if is_crossreffed(obj):
         metadata = obj._docnote_extract_metadata
@@ -346,11 +361,12 @@ class NormalizedObj:
                 declared on the object.''')]
 
     # Where the value was declared. String if known (because it had a
-    # __module__ or it had a docnote). None if not applicable, because the
-    # object isn't a direct child of a module.
+    # __module__ or it had a docnote). None in some weird situations, like
+    # object.__init_subclass__.
     canonical_module: str | Literal[Singleton.UNKNOWN] | None
     # What name the object had in the module it was declared. String if
-    # known, None if not applicable.
+    # known, None if not applicable (because it isn't a direct child of a
+    # module)
     canonical_name: str | Literal[Singleton.UNKNOWN] | None
 
     def __post_init__(self):
