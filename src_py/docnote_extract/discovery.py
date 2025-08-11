@@ -120,6 +120,10 @@ class ModuleTreeNode[TN: ModuleTreeNode, TM: ModulePostExtraction | None]:
     In addition to the module names themselves (and if desired, the
     module objects), they include the effective docnote config for
     every module.
+
+    Note that the existence of the ``effective_config`` is the primary
+    reason this class exists; otherwise, a simple string-based tree
+    structure would make more sense!
     """
     fullname: str
     relname: str

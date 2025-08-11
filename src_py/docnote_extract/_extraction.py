@@ -4,6 +4,7 @@ import inspect
 import logging
 import sys
 import typing
+from collections.abc import Collection
 from collections.abc import Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -163,6 +164,9 @@ class _ExtractionFinderLoader(Loader):
     inspected_modules: set[str] = field(
         default_factory=set, repr=False)
 
+    _firstparty_name_trees: dict[str, _ModuleNameTreeNode] = field(
+        default_factory=dict, repr=False, init=False, compare=False)
+
     def discover_and_extract(self) -> dict[str, ModulePostExtraction]:
         ctx_token = _EXTRACTION_PHASE.set(_ExtractionPhase.HOOKED)
         try:
@@ -176,6 +180,8 @@ class _ExtractionFinderLoader(Loader):
             _EXTRACTION_PHASE.set(_ExtractionPhase.EXPLORATION)
             firstparty_names = frozenset(
                 discover_all_modules(*self.firstparty_packages))
+            self._firstparty_name_trees.update(
+                _ModuleNameTreeNode.from_discovery(firstparty_names))
             self._stash_firstparty_or_nostub_raw()
             # We need to clean up everything here because we'll be
             # transitioning into tracked modules instead of the raw ones
@@ -645,11 +651,12 @@ class _ExtractionFinderLoader(Loader):
             logger.debug('Stubbing module: %s', module.__name__)
             module.__getattr__ = partial(
                 _stubbed_getattr, module_name=module.__name__)
+            _populate_module_stub(
+                loader_state,
+                self._firstparty_name_trees.get(loader_state.toplevel_package),
+                self.module_stash_nostub_raw.get(loader_state.fullname),
+                module)
             self.module_stash_stubbed[loader_state.fullname] = module
-            # Always set this to indicate that it has submodules. We can't
-            # know this -- at least not for thirdparty stubs -- so we always
-            # just set it.
-            module.__path__ = []
 
         elif isinstance(loader_state, _DelegatedLoaderState):
             real_module = loader_state.delegated_module
@@ -686,7 +693,7 @@ class _ExtractionFinderLoader(Loader):
                 # However, we do need to keep track of this for cleanup
                 # purposes!
                 self.inspected_modules.add(loader_state.fullname)
-                logger.debug(
+                logger.info(
                     'Re-execing module for inspection: %s',
                     loader_state.fullname)
 
@@ -721,6 +728,51 @@ class _ExtractionFinderLoader(Loader):
                 + 'during ``exec_module``. Will noop; expect import errors!',
                 loader_state.fullname)
             return
+
+
+def _populate_module_stub(
+        loader_state: _ExtractionLoaderState,
+        package_name_tree: _ModuleNameTreeNode | None,
+        nostub_module: ModuleType | None,
+        stub_module: ModuleType):
+    """
+    Also populates misc important module-level details (currently,
+    ``__all__``, along with any submodules) if there is a (firstparty)
+    nostub module available.
+    """
+    # Always set this to indicate that it has submodules. We can't
+    # know this -- at least not for thirdparty stubs -- so we always
+    # just set it.
+    stub_module.__path__ = []
+
+    if loader_state.is_firstparty:
+        if nostub_module is None or package_name_tree is None:
+            logger.warning(
+                'Populating firstparty module stub without nostub reference '
+                + 'module and/or package name tree; downstream code might '
+                + 'break! %s: package_name_tree %s, nostub_module %s',
+                loader_state.fullname, package_name_tree, nostub_module)
+            return
+
+        if hasattr(nostub_module, '__all__'):
+            coerced_dunder_all = tuple(nostub_module.__all__)
+        # This is a workaround for intra-project starred imports. It's not
+        # technically correct, but it solves the "we don't know what to have in
+        # the starred import when it's stubbed" problem, and can be trivially
+        # disabled by defining an ``__all__``
+        else:
+            coerced_dunder_all = tuple(nostub_module.__dict__)
+
+        # pyright doesn't like modules not necessarily having an __all__, hence
+        # the ignore directive
+        stub_module.__all__ = coerced_dunder_all  # type: ignore
+
+        name_node = package_name_tree.find(loader_state.fullname)
+        for child_node in name_node.children.values():
+            setattr(
+                stub_module,
+                child_node.relname,
+                import_module(child_node.fullname))
 
 
 def _clone_import_attrs(
@@ -783,6 +835,10 @@ class _ExtractionLoaderState:
     stub_strategy: _StubStrategy
     from_stash: bool = False
 
+    @property
+    def toplevel_package(self) -> str:
+        return self.fullname.partition('.')[0]
+
 
 @dataclass(slots=True, kw_only=True)
 class _DelegatedLoaderState(_ExtractionLoaderState):
@@ -840,11 +896,13 @@ def _stubbed_getattr(name: str, *, module_name: str):
     it exists on the true source module; we're relying upon type
     checkers to ensure that) with a reftype.
     """
+    # Note that with firstparty packages, we inject the real __all__ from
+    # the nostub module, so this condition should never be hit.
     if name == '__all__':
         logger.warning(
-            'Star imports from stubbed modules are unsupported (consult the '
-            + 'docs for more details). As a fallback, we return an empty '
-            + '``__all__``; expect downstream code to break. (%s)',
+            'Star imports from stubbed thirdparty modules are unsupported '
+            + '(consult the docs for more details). As a fallback, we return '
+            + 'an empty ``__all__``; expect downstream code to break. (%s)',
             module_name)
         return []
 
@@ -938,3 +996,67 @@ def is_module_post_extraction(
     return (
         isinstance(module, ModuleType)
         and hasattr(module, '_docnote_extract_import_tracking_registry'))
+
+
+@dataclass(slots=True)
+class _ModuleNameTreeNode:
+    """Unlike the ``discovery.ModuleTreeNode``, which exists primarily
+    to layer ``effective_config``s, this is a simple representation of
+    the full hierarchy of firstparty module names -- ^^but only names,^^
+    not their configs! We use this to correctly populate stubbed
+    submodules, so that the import system doesn't grab the nostub
+    module (or do some other shenanigans).
+    """
+    fullname: str
+    relname: str
+    children: dict[str, _ModuleNameTreeNode] = field(default_factory=dict)
+
+    def find(self, module_name: str) -> _ModuleNameTreeNode:
+        """Traverses the tree and finds the name node for the passed
+        module name. **Can only be called on the tree root!**
+        """
+        parts = module_name.split('.')
+        current_part = parts[0]
+        current_node = self
+        if current_part != self.fullname:
+            raise ValueError(
+                'Find must start from tree root!', self.fullname, module_name)
+
+        for part in parts[1:]:
+            current_node = current_node.children[part]
+
+        return current_node
+
+    @classmethod
+    def from_discovery(
+            cls,
+            discovered: Collection[str]
+            ) -> dict[str, _ModuleNameTreeNode]:
+        """Constructs one module name tree for each of the toplevel
+        packages contained in ``discovered`` and returns them (with
+        the toplevel package name as a key).
+        """
+        max_depth = max(module_name.count('.') for module_name in discovered)
+        # We're going to sort all of the modules based on how deep their
+        # names are. That way we can always assume the parent already exists
+        # within the tree.
+        depth_stack: list[list[str]] = [[] for _ in range(max_depth + 1)]
+        for module_name in discovered:
+            depth_stack[module_name.count('.')].append(module_name)
+
+        all_nodes: dict[str, _ModuleNameTreeNode] = {}
+        roots_by_pkg: dict[str, _ModuleNameTreeNode] = {}
+        for package_name in depth_stack[0]:
+            node = cls(fullname=package_name, relname=package_name)
+            roots_by_pkg[package_name] = node
+            all_nodes[package_name] = node
+
+        for submodule_depth in depth_stack[1:]:
+            for submodule_name in submodule_depth:
+                parent_module_name, _, relname = submodule_name.rpartition('.')
+                parent_node = all_nodes[parent_module_name]
+                node = cls(submodule_name, relname)
+                parent_node.children[relname] = node
+                all_nodes[submodule_name] = node
+
+        return roots_by_pkg

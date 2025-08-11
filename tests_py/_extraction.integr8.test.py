@@ -18,6 +18,7 @@ import docnote_extract_testpkg
 import docnote_extract_testpkg._hand_rolled
 import docnote_extract_testpkg._hand_rolled.noteworthy
 import docnote_extract_testpkg._hand_rolled.relativity
+import docnote_extract_testpkg._hand_rolled.uses_import_names
 import docnote_extract_testutils
 from docnote_extract_testutils.fixtures import purge_cached_testpkg_modules
 from docnote_extract_testutils.fixtures import set_inspection
@@ -279,7 +280,8 @@ class TestExtractionFinderLoader:
             'docnote_extract_testpkg',
             'docnote_extract_testpkg._hand_rolled',
             'docnote_extract_testpkg._hand_rolled.noteworthy',
-            'docnote_extract_testpkg._hand_rolled.relativity',])
+            'docnote_extract_testpkg._hand_rolled.relativity',
+            'docnote_extract_testpkg._hand_rolled.uses_import_names',])
 
         floader = _ExtractionFinderLoader(
             frozenset({'docnote_extract_testpkg'}),
@@ -292,7 +294,9 @@ class TestExtractionFinderLoader:
                 'docnote_extract_testpkg._hand_rolled.noteworthy':
                     docnote_extract_testpkg._hand_rolled.noteworthy,
                 'docnote_extract_testpkg._hand_rolled.relativity':
-                    docnote_extract_testpkg._hand_rolled.relativity,})
+                    docnote_extract_testpkg._hand_rolled.relativity,
+                'docnote_extract_testpkg._hand_rolled.uses_import_names':
+                    docnote_extract_testpkg._hand_rolled.uses_import_names,})
 
         retval = floader.discover_and_extract()
 
@@ -301,6 +305,7 @@ class TestExtractionFinderLoader:
         assert is_crossreffed(to_inspect.SOME_CONSTANT)
         assert is_crossreffed(to_inspect.ROOT_VAR)
         assert is_crossreffed(to_inspect.func_with_config)
+        assert is_crossreffed(to_inspect.uses_import_names)
 
     @patch('docnote_extract._extraction.discover_all_modules', autospec=True)
     @purge_cached_testpkg_modules
