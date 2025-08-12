@@ -1,6 +1,7 @@
 import sys
 from collections.abc import Callable
 from contextlib import contextmanager
+from functools import wraps
 from typing import overload
 
 from docnote_extract._extraction import _EXTRACTION_PHASE
@@ -12,7 +13,8 @@ from docnote_extract._extraction import _ExtractionPhase
 def purge_cached_testpkg_modules() -> None: ...
 @overload
 def purge_cached_testpkg_modules[T: Callable](func: T, /) -> T: ...
-def purge_cached_testpkg_modules(func=None, /):
+def purge_cached_testpkg_modules[T: Callable](
+        func : T | None = None, /) -> T | None:
     """Use this to remove every testpkg module from sys.modules.
     Manually applied to tests for performance reasons.
 
@@ -22,11 +24,12 @@ def purge_cached_testpkg_modules(func=None, /):
         _do_purge_cached_testpkg_modules()
 
     else:
+        @wraps(func)
         def closure(*args, **kwargs):
             _do_purge_cached_testpkg_modules()
             return func(*args, **kwargs)
 
-        return closure
+        return closure  # type: ignore
 
 
 def _do_purge_cached_testpkg_modules():

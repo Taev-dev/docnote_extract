@@ -67,6 +67,8 @@ class TestExtractionFinderLoader:
         """extract_firstparty must return a module-post-extraction, it
         must reset the module to inspect before returning, and it must
         remove the module from sys before and after extraction.
+
+        Additionally, it must not call ``import_module``.
         """
         import docnote_extract_testpkg._hand_rolled as raw_module
         assert _MODULE_TO_INSPECT.get(None) is None
@@ -85,17 +87,18 @@ class TestExtractionFinderLoader:
         with patch(
             'docnote_extract._extraction.import_module',
             autospec=True,
-            side_effect=fake_import_module
         ) as import_module_mock:
             result = floader.extract_firstparty(
                 'docnote_extract_testpkg._hand_rolled')
 
-        assert import_module_mock.call_count == 1
+        assert import_module_mock.call_count == 0
         assert is_module_post_extraction(result)
         assert result is not raw_module
         assert result.__name__ == 'docnote_extract_testpkg._hand_rolled'
         assert _MODULE_TO_INSPECT.get(None) is None
-        assert 'docnote_extract_testpkg._hand_rolled' not in sys.modules
+        assert 'docnote_extract_testpkg._hand_rolled' in sys.modules
+        assert sys.modules[
+            'docnote_extract_testpkg._hand_rolled'] is raw_module
 
     def test_find_spec_skips_stdlib(self):
         """find_spec() must return None for modules in the stdlib.
@@ -167,10 +170,11 @@ class TestExtractionFinderLoader:
 
     @set_inspection('docnote_extract_testpkg')
     @set_phase(_ExtractionPhase.EXTRACTION)
-    def test_find_spec_firstparty_extraction_under_inspection(self):
+    def test_find_spec_firstparty_extraction_under_inspection(self, caplog):
         """find_spec() must return a delegated spec for modules in the
         firstparty set during the extraction phase. If the module is
-        under inspection, it must use the INSPECT stub strategy.
+        under inspection, it must use the STUB stub strategy, and warn
+        that the feature is not supported.
         """
         floader = _ExtractionFinderLoader(
             frozenset({'docnote_extract_testpkg'}),
@@ -178,10 +182,16 @@ class TestExtractionFinderLoader:
             module_stash_nostub_raw={
                 'pytest': pytest,
                 'docnote_extract_testpkg': docnote_extract_testpkg})
+
+        caplog.clear()
         spec = floader.find_spec('docnote_extract_testpkg', None, None)
+
+        # This is a quick and dirty way of checking for the log message
+        captured_log_raw = ''.join(record.msg for record in caplog.records)
+        assert 'Direct import detected' in captured_log_raw
         assert spec is not None
         assert isinstance(spec.loader_state, _DelegatedLoaderState)
-        assert spec.loader_state.stub_strategy == _StubStrategy.INSPECT
+        assert spec.loader_state.stub_strategy == _StubStrategy.STUB
         assert spec.loader_state.is_firstparty
 
     def test_find_spec_for_stubbable(self):

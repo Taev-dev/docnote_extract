@@ -84,7 +84,6 @@ def summarize_module(
         if desc_class is not None:
             module_members.add(desc_class.from_obj(
                 name,
-                module_crossref,
                 namespace,
                 normalized_obj,
                 classification,
@@ -123,10 +122,16 @@ class ObjClassification:
     is_async_generator_function: bool
     is_async_generator: bool
     is_method_wrapper: bool
+    # Note: the primary place you're likely to encounter these in third-party
+    # code is as the type of a slot. So for example, any dataclass with
+    # slots=True will have this type on its attributes. As per stdlib docs,
+    # these are **never** a function, class, method, or builtin.
+    # ... but it's still True for int.__add__. Errrm??? Confusing AF.
     is_method_descriptor: bool
     is_data_descriptor: bool
     is_getset_descriptor: bool
     is_member_descriptor: bool
+    is_callable: bool
 
     @property
     def is_any_generator(self) -> bool:
@@ -170,7 +175,8 @@ class ObjClassification:
             is_method_descriptor=inspect.ismethoddescriptor(obj),
             is_data_descriptor=inspect.isdatadescriptor(obj),
             is_getset_descriptor=inspect.isgetsetdescriptor(obj),
-            is_member_descriptor=inspect.ismemberdescriptor(obj))
+            is_member_descriptor=inspect.ismemberdescriptor(obj),
+            is_callable=callable(obj))
 
     def get_desc_class(self) -> type[_DescBase] | None:
         """Given the current classification, returns which description
@@ -196,8 +202,8 @@ class ObjClassification:
             or self.is_coroutine_function
             or self.is_async_generator_function
             or self.is_method_wrapper
-            or self.is_method_descriptor
-            or self.is_member_descriptor
+            or (self.is_member_descriptor and self.is_callable)
+            or (self.is_method_descriptor and self.is_callable)
         ):
             return CallableDesc
 
@@ -270,13 +276,13 @@ class _DescBaseProtocol(Protocol):
     def from_obj(
             cls,
             name_in_parent: str,
-            parent_crossref: Crossref,
             parent_crossref_namespace: dict[str, Crossref],
             obj: NormalizedObj,
             classification: ObjClassification,
             object_filters: Sequence[ObjectFilter],
             *,
-            module_globals: dict[str, Any]
+            module_globals: dict[str, Any],
+            in_class: bool = False,
             ) -> Self:
         """Given an object and its classification, construct a
         description instance, populating it with any required children.
@@ -365,13 +371,13 @@ class ModuleDesc(_DescBase):
     def from_obj(
             cls,
             name_in_parent: str,
-            parent_crossref: Crossref,
             parent_crossref_namespace: dict[str, Crossref],
             obj: NormalizedObj,
             classification: ObjClassification,
             object_filters: Sequence[ObjectFilter],
             *,
-            module_globals: dict[str, Any]
+            module_globals: dict[str, Any],
+            in_class: bool = False,
             ) -> Self:
         """It sorta... violates our protocol... but modules are an
         exception to the rule when it comes to ``from_obj``; they just
@@ -407,13 +413,13 @@ class CrossrefDesc(_DescBase):
     def from_obj(
             cls,
             name_in_parent: str,
-            parent_crossref: Crossref,
             parent_crossref_namespace: dict[str, Crossref],
             obj: NormalizedObj,
             classification: ObjClassification,
             object_filters: Sequence[ObjectFilter],
             *,
-            module_globals: dict[str, Any]
+            module_globals: dict[str, Any],
+            in_class: bool = False,
             ) -> Self:
         """Given an object and its classification, construct a
         description instance, populating it with any required children.
@@ -467,13 +473,13 @@ class VariableDesc(_DescBase):
     def from_obj(
             cls,
             name_in_parent: str,
-            parent_crossref: Crossref,
             parent_crossref_namespace: dict[str, Crossref],
             obj: NormalizedObj,
             classification: ObjClassification,
             object_filters: Sequence[ObjectFilter],
             *,
-            module_globals: dict[str, Any]
+            module_globals: dict[str, Any],
+            in_class: bool = False,
             ) -> Self:
         """Given an object and its classification, construct a
         description instance, populating it with any required children.
@@ -490,6 +496,8 @@ class VariableDesc(_DescBase):
                 'Traversals not yet supported for crossref variables',
                 src_obj)
 
+        # if isinstance(src_obj, property):
+            
         # If missing, use the runtime type as an inference -- unless the
         # object was a bare annotation (without a typespec?! weird), then
         # we can't do anything.
@@ -544,13 +552,13 @@ class ClassDesc(_DescBase):
     def from_obj(
             cls,
             name_in_parent: str,
-            parent_crossref: Crossref,
             parent_crossref_namespace: dict[str, Crossref],
             obj: NormalizedObj,
             classification: ObjClassification,
             object_filters: Sequence[ObjectFilter],
             *,
-            module_globals: dict[str, Any]
+            module_globals: dict[str, Any],
+            in_class: bool = False,
             ) -> Self:
         src_obj = cast(type, obj.obj_or_stub)
         config = obj.effective_config
@@ -593,12 +601,12 @@ class ClassDesc(_DescBase):
                 namespace[name] = crossref / GetattrTraversal(name)
                 members[name] = desc_class.from_obj(
                     name,
-                    crossref,
                     namespace,
                     normalized_obj,
                     classification,
                     object_filters,
-                    module_globals=module_globals)
+                    module_globals=module_globals,
+                    in_class=True)
 
         if has_crossreffed_base(src_obj):
             bases = src_obj._docnote_extract_base_classes
@@ -665,17 +673,16 @@ class CallableDesc(_DescBase):
                         SignatureTraversal(member.ordering_index)] = member
 
     @classmethod
-    def from_obj(  # noqa: PLR0913
+    def from_obj(
             cls,
             name_in_parent: str,
-            parent_crossref: Crossref,
             parent_crossref_namespace: dict[str, Crossref],
             obj: NormalizedObj,
             classification: ObjClassification,
             object_filters: Sequence[ObjectFilter],
             *,
             in_class: bool = False,
-            module_globals: dict[str, Any]
+            module_globals: dict[str, Any],
             ) -> Self:
         """Given an object and its classification, construct a
         description instance, populating it with any required children.
@@ -696,7 +703,13 @@ class CallableDesc(_DescBase):
         # Note that this doesn't include the implementation, only the
         # overloads, so we still need to merge it with the signature from
         # inspecting the implementation
-        overloads = get_overloads(src_obj)
+        try:
+            overloads = get_overloads(src_obj)
+        except Exception as exc:
+            print('-----------------')
+            print(f'{callable(src_obj)=}, {classification.is_callable=}')
+            print(f'{name_in_parent=}, {src_obj=}')
+            raise
         namespace_expansion: dict[str, Crossref] = {}
 
         signatures: list[SignatureDesc] = []
@@ -959,13 +972,13 @@ class SignatureDesc(_DescBase):
     def from_obj(
             cls,
             name_in_parent: str,
-            parent_crossref: Crossref,
             parent_crossref_namespace: dict[str, Crossref],
             obj: NormalizedObj,
             classification: ObjClassification,
             object_filters: Sequence[ObjectFilter],
             *,
-            module_globals: dict[str, Any]
+            module_globals: dict[str, Any],
+            in_class: bool = False,
             ) -> Self:
         """It sorta... violates our protocol... but signatures are an
         exception to the rule when it comes to ``from_obj``; they must
@@ -1001,13 +1014,13 @@ class ParamDesc(_DescBase):
     def from_obj(
             cls,
             name_in_parent: str,
-            parent_crossref: Crossref,
             parent_crossref_namespace: dict[str, Crossref],
             obj: NormalizedObj,
             classification: ObjClassification,
             object_filters: Sequence[ObjectFilter],
             *,
-            module_globals: dict[str, Any]
+            module_globals: dict[str, Any],
+            in_class: bool = False,
             ) -> Self:
         """It sorta... violates our protocol... but param descs are an
         exception to the rule when it comes to ``from_obj``; they must
@@ -1039,13 +1052,13 @@ class RetvalDesc(_DescBase):
     def from_obj(
             cls,
             name_in_parent: str,
-            parent_crossref: Crossref,
             parent_crossref_namespace: dict[str, Crossref],
             obj: NormalizedObj,
             classification: ObjClassification,
             object_filters: Sequence[ObjectFilter],
             *,
-            module_globals: dict[str, Any]
+            module_globals: dict[str, Any],
+            in_class: bool = False,
             ) -> Self:
         """It sorta... violates our protocol... but retval descs are an
         exception to the rule when it comes to ``from_obj``; they must
@@ -1131,7 +1144,7 @@ def _textify_notes(
             validate_config(effective_config, f'On-note config for {raw_note}')
 
         retval.append(DocText(
-            value=raw_note.value,
+            value=inspect.cleandoc(raw_note.value),
             markup_lang=effective_config.markup_lang))
 
     return tuple(retval)

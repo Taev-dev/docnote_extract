@@ -3,8 +3,6 @@ import sys
 from importlib.machinery import ModuleSpec
 from unittest.mock import patch
 
-import pytest
-
 from docnote_extract._crossrefs import Crossref
 from docnote_extract._crossrefs import has_crossreffed_base
 from docnote_extract._crossrefs import has_crossreffed_metaclass
@@ -12,13 +10,12 @@ from docnote_extract._crossrefs import is_crossreffed
 from docnote_extract._extraction import CrossrefMarker
 from docnote_extract._extraction import _ExtractionFinderLoader
 from docnote_extract._extraction import _ExtractionPhase
+from docnote_extract._extraction import _wrapped_tracking_getattr
+from docnote_extract._extraction import is_wrapped_tracking_module
 from docnote_extract._extraction import mark_special_reftype
 
 import docnote_extract_testpkg
 import docnote_extract_testpkg._hand_rolled
-import docnote_extract_testpkg._hand_rolled.noteworthy
-import docnote_extract_testpkg._hand_rolled.relativity
-import docnote_extract_testpkg._hand_rolled.uses_import_names
 import docnote_extract_testutils
 from docnote_extract_testutils.fixtures import purge_cached_testpkg_modules
 from docnote_extract_testutils.fixtures import set_inspection
@@ -99,11 +96,11 @@ class TestExtractionFinderLoader:
     @set_phase(_ExtractionPhase.EXTRACTION)
     @set_inspection('docnote_extract_testpkg._hand_rolled')
     @purge_cached_testpkg_modules
-    def test_inspection_leaves_target_unstubbed(self):
+    def test_inspection_direct_import_stubbed(self, caplog):
         """After installing the import hook and while inspecting a
-        module, the returned module (and later imports thereof) must
-        return the module being inspected itself, and not a stubbed
-        version thereof.
+        module, attempting to import the module being inspected must
+        return a stubbed version of the module and issue a warning
+        that the behavior is unsupported.
         """
         assert 'pytest' in sys.modules
 
@@ -119,12 +116,17 @@ class TestExtractionFinderLoader:
         try:
             floader._stash_prehook_modules()
             try:
+                caplog.clear()
                 testpkg = importlib.import_module(
                     'docnote_extract_testpkg._hand_rolled')
+
+                # This is a quick and dirty way of checking for the log message
+                captured_log_raw = ''.join(
+                    record.msg for record in caplog.records)
+                assert 'Direct import detected' in captured_log_raw
                 assert testpkg is not docnote_extract_testpkg._hand_rolled
                 assert 'docnote_extract_testpkg._hand_rolled' in sys.modules
-                assert not is_crossreffed(testpkg)
-                assert testpkg.SOME_CONSTANT == 7
+                assert is_crossreffed(testpkg)
             finally:
                 floader._unstash_prehook_modules()
         finally:
@@ -154,12 +156,7 @@ class TestExtractionFinderLoader:
         }):
             floader = _ExtractionFinderLoader(
                 frozenset({'docnote_extract_testpkg'}),
-                nostub_packages=frozenset({'pytest'}),
-                module_stash_nostub_raw={
-                    'pytest': pytest,
-                    'docnote_extract_testpkg': docnote_extract_testpkg,
-                    'docnote_extract_testpkg._hand_rolled':
-                        docnote_extract_testpkg._hand_rolled})
+                nostub_packages=frozenset({'pytest'}),)
 
             retval = floader.discover_and_extract()
 
@@ -184,12 +181,7 @@ class TestExtractionFinderLoader:
 
         floader = _ExtractionFinderLoader(
             frozenset({'docnote_extract_testpkg'}),
-            nostub_packages=frozenset({'pytest'}),
-            module_stash_nostub_raw={
-                'pytest': pytest,
-                'docnote_extract_testpkg': docnote_extract_testpkg,
-                'docnote_extract_testpkg._hand_rolled':
-                    docnote_extract_testpkg._hand_rolled})
+            nostub_packages=frozenset({'pytest'}),)
 
         retval = floader.discover_and_extract()
 
@@ -214,12 +206,7 @@ class TestExtractionFinderLoader:
 
         floader = _ExtractionFinderLoader(
             frozenset({'docnote_extract_testpkg'}),
-            nostub_packages=frozenset({'pytest'}),
-            module_stash_nostub_raw={
-                'pytest': pytest,
-                'docnote_extract_testpkg': docnote_extract_testpkg,
-                'docnote_extract_testpkg._hand_rolled':
-                    docnote_extract_testpkg._hand_rolled})
+            nostub_packages=frozenset({'pytest'}),)
 
         retval = floader.discover_and_extract()
 
@@ -246,18 +233,46 @@ class TestExtractionFinderLoader:
             nostub_packages=frozenset({'pytest'}),
             # CRITICAL: this is what makes this test unique!
             nostub_firstparty_modules=frozenset({
-                'docnote_extract_testpkg._hand_rolled'}),
-            module_stash_nostub_raw={
-                'pytest': pytest,
-                'docnote_extract_testpkg': docnote_extract_testpkg,
-                'docnote_extract_testpkg._hand_rolled':
-                    docnote_extract_testpkg._hand_rolled})
+                'docnote_extract_testpkg._hand_rolled'}),)
 
-        retval = floader.discover_and_extract()
+        with patch(
+            'docnote_extract._extraction._wrapped_tracking_getattr',
+            autospec=True,
+            wraps=_wrapped_tracking_getattr
+        ) as tracking_getattr_watcher:
+            retval = floader.discover_and_extract()
 
         to_inspect = retval[
             'docnote_extract_testpkg._hand_rolled.imports_from_parent']
 
+        # Okay, so... I'd like to just check that call_count == 2. Except
+        # it isn't, and it never will be (unless the implementation of
+        # importlib._bootstrap._handle_fromlist changes, which is why we're
+        # not just going to check that call_count == 4).
+        # Because it turns out that the implementation of the import system
+        # itself does a hasattr() check against the tracking module, which
+        # in turn excercises the __getattr__ hook on the tracking module,
+        # causing an extra call for each of the imported attributes. So...
+        # yeah. It actually didn't take me ^^that long^^ to figure out what
+        # was going on, but I did end up, yknow, patching out internal
+        # implementation details of the import system and doing some random
+        # stack dumps, so... well anyways. Machete mode debugging and all that.
+        # Instead, for robustness, we'll just make sure that we had tracking
+        # lookups against the correct attributes.
+        attr_targets = {
+            call_arg.args[0]
+            for call_arg in tracking_getattr_watcher.call_args_list}
+        module_targets = {
+            call_arg.kwargs['module_name']
+            for call_arg in tracking_getattr_watcher.call_args_list}
+        assert attr_targets == {'SOME_CONSTANT', 'SOME_SENTINEL'}
+        assert module_targets == {'docnote_extract_testpkg._hand_rolled'}
+
+        assert 'docnote_extract_testpkg._hand_rolled' \
+            in floader.module_stash_tracked
+        assert is_wrapped_tracking_module(
+            floader.module_stash_tracked[
+                'docnote_extract_testpkg._hand_rolled'])
         assert not is_crossreffed(to_inspect)
         assert not is_crossreffed(to_inspect.SOME_CONSTANT)
         assert not is_crossreffed(to_inspect.RENAMED_SENTINEL)
@@ -285,18 +300,7 @@ class TestExtractionFinderLoader:
 
         floader = _ExtractionFinderLoader(
             frozenset({'docnote_extract_testpkg'}),
-            nostub_packages=frozenset({'pytest'}),
-            module_stash_nostub_raw={
-                'pytest': pytest,
-                'docnote_extract_testpkg': docnote_extract_testpkg,
-                'docnote_extract_testpkg._hand_rolled':
-                    docnote_extract_testpkg._hand_rolled,
-                'docnote_extract_testpkg._hand_rolled.noteworthy':
-                    docnote_extract_testpkg._hand_rolled.noteworthy,
-                'docnote_extract_testpkg._hand_rolled.relativity':
-                    docnote_extract_testpkg._hand_rolled.relativity,
-                'docnote_extract_testpkg._hand_rolled.uses_import_names':
-                    docnote_extract_testpkg._hand_rolled.uses_import_names,})
+            nostub_packages=frozenset({'pytest'}))
 
         retval = floader.discover_and_extract()
 
@@ -322,12 +326,7 @@ class TestExtractionFinderLoader:
 
         floader = _ExtractionFinderLoader(
             frozenset({'docnote_extract_testpkg'}),
-            nostub_packages=frozenset({'pytest'}),
-            module_stash_nostub_raw={
-                'pytest': pytest,
-                'docnote_extract_testpkg': docnote_extract_testpkg,
-                'docnote_extract_testpkg._hand_rolled':
-                    docnote_extract_testpkg._hand_rolled,})
+            nostub_packages=frozenset({'pytest'}),)
 
         retval = floader.discover_and_extract()
 

@@ -425,7 +425,7 @@ class NormalizedType:
 @dataclass(slots=True, frozen=True)
 class LazyResolvingValue:
     _crossref: Crossref | None
-    _value: None | Any
+    _value: Singleton.MISSING | Any
 
     def __format__(self, fmtinfo: str) -> str:
         """If you don't want to actually resolve the annotation, and you
@@ -453,14 +453,14 @@ class LazyResolvingValue:
         if is_crossreffed(annotated):
             return cls(
                 _crossref=annotated._docnote_extract_metadata,
-                _value=None)
+                _value=Singleton.MISSING)
         else:
             return cls(
                 _crossref=None,
                 _value=annotated)
 
     def __post_init__(self):
-        if not ((self._crossref is None) ^ (self._value is None)):
+        if not ((self._crossref is None) ^ (self._value is Singleton.MISSING)):
             raise TypeError(
                 'LazyResolvingValue can only have a crossref xor value!',
                 self)
