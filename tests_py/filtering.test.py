@@ -6,8 +6,7 @@ import pytest
 from docnote import DocnoteConfig
 
 from docnote_extract._extraction import ModulePostExtraction
-from docnote_extract._module_tree import ModuleTreeNode
-from docnote_extract._module_tree import ModuleTreeNodeHydrated
+from docnote_extract._module_tree import ConfiguredModuleTreeNode
 from docnote_extract._types import Singleton
 from docnote_extract.filtering import _conventionally_private
 from docnote_extract.filtering import _is_dunder
@@ -24,12 +23,11 @@ class TestFilterModules:
         """When the root node is supposed to be filtered out, the return
         value must be None.
         """
-        root: ModuleTreeNodeHydrated = ModuleTreeNode(
+        root = ConfiguredModuleTreeNode(
             '_foo',
             '_foo',
             {},
-            effective_config=DocnoteConfig(),
-            module=ModulePostExtraction('_foo'))
+            effective_config=DocnoteConfig(),)
 
         retval = filter_modules(root)
 
@@ -39,64 +37,57 @@ class TestFilterModules:
         """When not filtered out, the return value must be a new object,
         and not an inplace modification of the passed root node.
         """
-        root: ModuleTreeNodeHydrated = ModuleTreeNode(
+        root = ConfiguredModuleTreeNode(
             'foo',
             'foo',
             {},
-            effective_config=DocnoteConfig(),
-            module=ModulePostExtraction('foo'))
+            effective_config=DocnoteConfig())
 
         retval = filter_modules(root)
 
         assert retval is not None
         assert retval is not root
-        assert isinstance(retval, ModuleTreeNode)
+        assert isinstance(retval, ConfiguredModuleTreeNode)
 
     def test_without_configs(self):
         """Without config overrides, inclusion rules must simply follow
         python conventions.
         """
-        root: ModuleTreeNodeHydrated = ModuleTreeNode(
+        root = ConfiguredModuleTreeNode(
             'foo',
             'foo',
-            {'bar': ModuleTreeNode(
+            {'bar': ConfiguredModuleTreeNode(
                 'foo.bar',
                 'bar',
-                {'baz': ModuleTreeNode(
+                {'baz': ConfiguredModuleTreeNode(
                     'foo.bar._baz',
                     '_baz',
-                    effective_config=DocnoteConfig(),
-                    module=ModulePostExtraction('_baz'))},
-                effective_config=DocnoteConfig(),
-                module=ModulePostExtraction('bar'))},
-            effective_config=DocnoteConfig(),
-            module=ModulePostExtraction('foo'))
+                    effective_config=DocnoteConfig(),)},
+                effective_config=DocnoteConfig(),)},
+            effective_config=DocnoteConfig(),)
 
         retval = filter_modules(root)
 
         assert retval is not None
-        assert isinstance(retval / 'bar', ModuleTreeNode)
+        assert isinstance(retval / 'bar', ConfiguredModuleTreeNode)
         assert not (retval / 'bar').children
 
     def test_silenced_child(self):
         """The public child of a private parent must not be included in
         the result.
         """
-        root: ModuleTreeNodeHydrated = ModuleTreeNode(
+        root = ConfiguredModuleTreeNode(
             'foo',
             'foo',
-            {'bar': ModuleTreeNode(
+            {'bar': ConfiguredModuleTreeNode(
                 'foo._bar',
                 '_bar',
-                {'baz': ModuleTreeNode(
+                {'baz': ConfiguredModuleTreeNode(
                     'foo._bar.baz',
                     'baz',
-                    effective_config=DocnoteConfig(),
-                    module=ModulePostExtraction('baz'))},
-                effective_config=DocnoteConfig(),
-                module=ModulePostExtraction('_bar'))},
-            effective_config=DocnoteConfig(),
-            module=ModulePostExtraction('foo'))
+                    effective_config=DocnoteConfig(),)},
+                effective_config=DocnoteConfig(),)},
+            effective_config=DocnoteConfig(),)
 
         retval = filter_modules(root)
 
@@ -108,27 +99,24 @@ class TestFilterModules:
         it must be included in the result, regardless of python
         conventions.
         """
-        root: ModuleTreeNodeHydrated = ModuleTreeNode(
+        root = ConfiguredModuleTreeNode(
             'foo',
             'foo',
-            {'_bar': ModuleTreeNode(
+            {'_bar': ConfiguredModuleTreeNode(
                 'foo._bar',
                 '_bar',
-                {'baz': ModuleTreeNode(
+                {'baz': ConfiguredModuleTreeNode(
                     'foo._bar.baz',
                     'baz',
-                    effective_config=DocnoteConfig(),
-                    module=ModulePostExtraction('baz'))},
-                effective_config=DocnoteConfig(include_in_docs=True),
-                module=ModulePostExtraction('_bar'))},
-            effective_config=DocnoteConfig(),
-            module=ModulePostExtraction('foo'))
+                    effective_config=DocnoteConfig(),)},
+                effective_config=DocnoteConfig(include_in_docs=True),)},
+            effective_config=DocnoteConfig(),)
 
         retval = filter_modules(root)
 
         assert retval is not None
         assert retval.children
-        assert isinstance(retval / '_bar', ModuleTreeNode)
+        assert isinstance(retval / '_bar', ConfiguredModuleTreeNode)
         assert (retval / '_bar').children
 
     def test_override_force_exclude(self):
@@ -136,21 +124,18 @@ class TestFilterModules:
         it must be excluded from the result, regardless of python
         conventions.
         """
-        root: ModuleTreeNodeHydrated = ModuleTreeNode(
+        root = ConfiguredModuleTreeNode(
             'foo',
             'foo',
-            {'bar': ModuleTreeNode(
+            {'bar': ConfiguredModuleTreeNode(
                 'foo.bar',
                 'bar',
-                {'baz': ModuleTreeNode(
+                {'baz': ConfiguredModuleTreeNode(
                     'foo.bar.baz',
                     'baz',
-                    effective_config=DocnoteConfig(),
-                    module=ModulePostExtraction('baz'))},
-                effective_config=DocnoteConfig(include_in_docs=False),
-                module=ModulePostExtraction('bar'))},
-            effective_config=DocnoteConfig(),
-            module=ModulePostExtraction('foo'))
+                    effective_config=DocnoteConfig(),)},
+                effective_config=DocnoteConfig(include_in_docs=False),)},
+            effective_config=DocnoteConfig(),)
 
         retval = filter_modules(root)
 

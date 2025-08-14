@@ -31,7 +31,7 @@ from docnote_extract._crossrefs import has_crossreffed_base
 from docnote_extract._crossrefs import has_crossreffed_metaclass
 from docnote_extract._crossrefs import is_crossreffed
 from docnote_extract._extraction import ModulePostExtraction
-from docnote_extract._module_tree import ModuleTreeNode
+from docnote_extract._module_tree import ConfiguredModuleTreeNode
 from docnote_extract._types import Singleton
 from docnote_extract._utils import validate_config
 from docnote_extract.filtering import ModuleObjectFilter
@@ -50,7 +50,7 @@ def summarize_module(
         normalized_objs: Annotated[
                 dict[str, NormalizedObj],
                 Note('All module members, with no filters applied.')],
-        module_tree: ModuleTreeNode,
+        module_tree: ConfiguredModuleTreeNode,
         module_object_filters: Annotated[
                 Sequence[ModuleObjectFilter],
                 Note('''Filters to apply to the direct descendants of the

@@ -8,6 +8,7 @@ from docnote import DocnoteConfig
 from docnote import MarkupLang
 
 from docnote_extract._extraction import ModulePostExtraction
+from docnote_extract._module_tree import ConfiguredModuleTreeNode
 from docnote_extract._module_tree import ModuleTreeNode
 
 
@@ -25,10 +26,7 @@ class TestModuleTreeNode:
                 'bar',
                 {'baz': ModuleTreeNode(
                     'foo.bar.baz',
-                    'baz',
-                    effective_config=DocnoteConfig())},
-                effective_config=DocnoteConfig())},
-            effective_config=DocnoteConfig())
+                    'baz',)},)},)
         assert tree.find('foo.bar.baz').fullname == 'foo.bar.baz'
 
     def test_from_extraction(self):
@@ -57,7 +55,7 @@ class TestModuleTreeNode:
         fake_extraction = cast(
             dict[str, ModulePostExtraction], fake_extraction)
 
-        root_nodes = ModuleTreeNode.from_extraction(fake_extraction)
+        root_nodes = ConfiguredModuleTreeNode.from_extraction(fake_extraction)
 
         assert len(root_nodes) == 2
         assert 'foo' in root_nodes
@@ -77,9 +75,9 @@ class TestModuleTreeNode:
         assert (foo_root / 'bar' / 'baz').effective_config == DocnoteConfig(
             enforce_known_lang=True, markup_lang=MarkupLang.CLEANCOPY)
 
-    def test_flattening(self):
-        """Flattening a tree from its extraction must reproduce the
-        extraction.
+    def test_linearization(self):
+        """Linearizing a tree from its extraction must include all of
+        the nodes.
         """
         fake_extraction = {
             'foo': ModuleType('foo'),
@@ -103,25 +101,26 @@ class TestModuleTreeNode:
         fake_extraction = cast(
             dict[str, ModulePostExtraction], fake_extraction)
 
-        retval = {}
-        root_nodes = ModuleTreeNode.from_extraction(fake_extraction)
+        retval: set[str] = set()
+        root_nodes = ConfiguredModuleTreeNode.from_extraction(fake_extraction)
         for root_node in root_nodes.values():
-            retval.update(root_node.flatten())
+            for node in root_node.linearize():
+                retval.add(node.fullname)
 
-        assert retval == fake_extraction
+        assert retval == set(fake_extraction)
 
     def test_clone_without_children(self):
         """Cloning a node without its children must not include its
         children (... no shit, sherlock), but must preserve everything
         else.
         """
-        tree = ModuleTreeNode(
+        tree = ConfiguredModuleTreeNode(
             'foo',
             'foo',
-            {'bar': ModuleTreeNode(
+            {'bar': ConfiguredModuleTreeNode(
                 'foo.bar',
                 'bar',
-                {'baz': ModuleTreeNode(
+                {'baz': ConfiguredModuleTreeNode(
                     'foo.bar.baz',
                     'baz',
                     effective_config=DocnoteConfig())},

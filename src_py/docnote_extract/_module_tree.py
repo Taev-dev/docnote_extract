@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import logging
 import typing
+from collections.abc import Collection
+from collections.abc import Iterator
 from dataclasses import KW_ONLY
 from dataclasses import dataclass
 from dataclasses import field
@@ -27,25 +29,18 @@ if typing.TYPE_CHECKING:
 
 
 @dataclass(slots=True)
-class ModuleTreeNode[TN: ModuleTreeNode, TM: ModulePostExtraction | None]:
+class ModuleTreeNode:
     """Module trees represent the hierarchy of modules within a package.
-    In addition to the module names themselves (and if desired, the
-    module objects), they include the effective docnote config for
-    every module.
+    They also provide some utility functions to navigate the module
+    tree.
 
-    Note that the existence of the ``effective_config`` is the primary
-    reason this class exists; otherwise, a simple string-based tree
-    structure would make more sense!
+    Note that this is intended to be subclassed for particular use
+    cases (for example, construction of post-extraction effective
+    configs).
     """
     fullname: str
     relname: str
     children: dict[str, Self] = field(default_factory=dict)
-
-    _: KW_ONLY
-    effective_config: DocnoteConfig = field(compare=False, repr=False)
-    # Pyright appears to have a bug with the generic None not matching the
-    # explicit None in the default
-    module: TM = field(default=None, compare=False, repr=False)  # type: ignore
 
     def find(self, name: str) -> Self:
         """Finds the node associated with the passed module name.
@@ -82,29 +77,73 @@ class ModuleTreeNode[TN: ModuleTreeNode, TM: ModulePostExtraction | None]:
 
         return type(self)(**params)
 
-    def flatten(
-            self,
-            *,
-            _flattened: dict[str, TM] | None = None
-            ) -> dict[str, TM]:
-        """Converts the tree (back) into a flattened dictionary with
-        all nodes expressed by their fullname. If this is a bare tree
-        (ie, there are no modules), all of the values will be ``None``.
+    def linearize(self) -> Iterator[Self]:
+        """Yields all of the noeds in the tree in a depth-first
+        fashion.
         """
-        if _flattened is None:
-            _flattened = {}
-
-        _flattened[self.fullname] = self.module
+        yield self
         for child in self.children.values():
-            child.flatten(_flattened=_flattened)
+            yield from child.linearize()
 
-        return _flattened
+    @classmethod
+    def from_discovery(
+            cls,
+            discovered: Collection[str]
+            ) -> dict[str, ModuleTreeNode]:
+        """Constructs one module name tree for each of the toplevel
+        packages contained in ``discovered`` and returns them (with
+        the toplevel package name as a key).
+        """
+        max_depth = max(module_name.count('.') for module_name in discovered)
+        # We're going to sort all of the modules based on how deep their
+        # names are. That way we can always assume the parent already exists
+        # within the tree.
+        depth_stack: list[list[str]] = [[] for _ in range(max_depth + 1)]
+        for module_name in discovered:
+            depth_stack[module_name.count('.')].append(module_name)
+
+        all_nodes: dict[str, ModuleTreeNode] = {}
+        roots_by_pkg: dict[str, ModuleTreeNode] = {}
+        for package_name in depth_stack[0]:
+            node = cls(fullname=package_name, relname=package_name)
+            roots_by_pkg[package_name] = node
+            all_nodes[package_name] = node
+
+        for submodule_depth in depth_stack[1:]:
+            for submodule_name in submodule_depth:
+                parent_module_name, _, relname = submodule_name.rpartition('.')
+                parent_node = all_nodes[parent_module_name]
+                node = cls(submodule_name, relname)
+                parent_node.children[relname] = node
+                all_nodes[submodule_name] = node
+
+        return roots_by_pkg
+
+    def __truediv__(self, other: str) -> Self:
+        return self.children[other]
+
+
+@dataclass(slots=True)
+class ConfiguredModuleTreeNode(ModuleTreeNode):
+    """In addition to the underlying base module tree, these include
+    both the actual module-post-extraction and the effective docnote
+    config for every module in the tree.
+
+    Note that the existence of the ``effective_config`` is the primary
+    reason this class exists!
+    """
+    _: KW_ONLY
+    effective_config: DocnoteConfig = field(compare=False, repr=False)
+
+    def __post_init__(self):
+        validate_config(
+            self.effective_config, f'Module-level config for {self.fullname}')
 
     @classmethod
     def from_extraction(
             cls,
             extraction: dict[str, ModulePostExtraction]
-            ) -> dict[str, ModuleTreeNodeHydrated]:
+            ) -> dict[str, ConfiguredModuleTreeNode]:
         """Given the results of
         ``_ExtractionFinderLoader.discover_and_extract`` -- namely, a
         dict of ``{module_fullname: ModulePostExtraction}`` -- construct
@@ -121,16 +160,12 @@ class ModuleTreeNode[TN: ModuleTreeNode, TM: ModulePostExtraction | None]:
         for module_name, module in extraction.items():
             depth_stack[module_name.count('.')][module_name] = module
 
-        roots_by_pkg: dict[str, ModuleTreeNode] = {}
+        roots_by_pkg: dict[str, ConfiguredModuleTreeNode] = {}
         for package_name, root_module in depth_stack[0].items():
             roots_by_pkg[package_name] = cls(
                 fullname=package_name,
                 relname=package_name,
-                effective_config=coerce_config(root_module),
-                # I'm not sure if this is a pyright bug related to recursive
-                # generics, or if it's PEBKAC, but either way: ignoring is the
-                # most pragmatic resolution.
-                module=root_module)  # type: ignore
+                effective_config=coerce_config(root_module))
 
         for submodule_depth in depth_stack[1:]:
             for submodule_name, submodule in submodule_depth.items():
@@ -143,20 +178,6 @@ class ModuleTreeNode[TN: ModuleTreeNode, TM: ModulePostExtraction | None]:
                 parent_node.children[relname] = cls(
                     submodule_name,
                     relname,
-                    effective_config=cfg,
-                    # This is presumably the same problem as above.
-                    module=submodule)  # type: ignore
+                    effective_config=cfg)
 
         return roots_by_pkg
-
-    def __truediv__(self, other: str) -> Self:
-        return self.children[other]
-
-    def __post_init__(self):
-        validate_config(
-            self.effective_config, f'Module-level config for {self.fullname}')
-
-
-type ModuleTreeNodeHydrated = ModuleTreeNode[
-    ModuleTreeNodeHydrated, ModulePostExtraction]
-type ModuleTreeNodeBare = ModuleTreeNode[ModuleTreeNodeBare, None]

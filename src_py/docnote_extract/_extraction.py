@@ -5,8 +5,6 @@ import logging
 import sys
 import typing
 from collections import defaultdict
-from collections.abc import Collection
-from collections.abc import Iterator
 from collections.abc import Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -19,12 +17,10 @@ from importlib import import_module
 from importlib import reload as reload_module
 from importlib.abc import Loader
 from importlib.machinery import ModuleSpec
-from importlib.util import module_from_spec
 from types import ModuleType
 from typing import Annotated
 from typing import Any
 from typing import Protocol
-from typing import Self
 from typing import TypeGuard
 from typing import cast
 
@@ -33,6 +29,7 @@ from docnote import Note
 from docnote_extract._crossrefs import Crossref
 from docnote_extract._crossrefs import make_crossreffed
 from docnote_extract._crossrefs import make_metaclass_crossreffed
+from docnote_extract._module_tree import ModuleTreeNode
 from docnote_extract._types import Singleton
 from docnote_extract.discovery import discover_all_modules
 
@@ -458,9 +455,9 @@ class _ExtractionFinderLoader(Loader):
                 # need to worry about it
                 import_module(module_name)
 
-        name_tree = _ModuleNameTreeNode.from_discovery(firstparty_names)
+        name_tree = ModuleTreeNode.from_discovery(firstparty_names)
         for name_tree_root in name_tree.values():
-            for name_node in name_tree_root.flatten():
+            for name_node in name_tree_root.linearize():
                 module_name = name_node.fullname
                 nostub_module = self.module_stash_nostub_raw[module_name]
 
@@ -1077,75 +1074,3 @@ def is_module_post_extraction(
     return (
         isinstance(module, ModuleType)
         and hasattr(module, '_docnote_extract_import_tracking_registry'))
-
-
-@dataclass(slots=True)
-class _ModuleNameTreeNode:
-    """Unlike the ``discovery.ModuleTreeNode``, which exists primarily
-    to layer ``effective_config``s, this is a simple representation of
-    the full hierarchy of firstparty module names -- ^^but only names,^^
-    not their configs! We use this to correctly populate stubbed
-    submodules, so that the import system doesn't grab the nostub
-    module (or do some other shenanigans).
-    """
-    fullname: str
-    relname: str
-    children: dict[str, Self] = field(default_factory=dict)
-
-    def find(self, module_name: str) -> _ModuleNameTreeNode:
-        """Traverses the tree and finds the name node for the passed
-        module name. **Can only be called on the tree root!**
-        """
-        parts = module_name.split('.')
-        current_part = parts[0]
-        current_node = self
-        if current_part != self.fullname:
-            raise ValueError(
-                'Find must start from tree root!', self.fullname, module_name)
-
-        for part in parts[1:]:
-            current_node = current_node.children[part]
-
-        return current_node
-
-    @classmethod
-    def from_discovery(
-            cls,
-            discovered: Collection[str]
-            ) -> dict[str, _ModuleNameTreeNode]:
-        """Constructs one module name tree for each of the toplevel
-        packages contained in ``discovered`` and returns them (with
-        the toplevel package name as a key).
-        """
-        max_depth = max(module_name.count('.') for module_name in discovered)
-        # We're going to sort all of the modules based on how deep their
-        # names are. That way we can always assume the parent already exists
-        # within the tree.
-        depth_stack: list[list[str]] = [[] for _ in range(max_depth + 1)]
-        for module_name in discovered:
-            depth_stack[module_name.count('.')].append(module_name)
-
-        all_nodes: dict[str, _ModuleNameTreeNode] = {}
-        roots_by_pkg: dict[str, _ModuleNameTreeNode] = {}
-        for package_name in depth_stack[0]:
-            node = cls(fullname=package_name, relname=package_name)
-            roots_by_pkg[package_name] = node
-            all_nodes[package_name] = node
-
-        for submodule_depth in depth_stack[1:]:
-            for submodule_name in submodule_depth:
-                parent_module_name, _, relname = submodule_name.rpartition('.')
-                parent_node = all_nodes[parent_module_name]
-                node = cls(submodule_name, relname)
-                parent_node.children[relname] = node
-                all_nodes[submodule_name] = node
-
-        return roots_by_pkg
-
-    def flatten(self) -> Iterator[Self]:
-        """Yields all of the modules in the tree in a depth-first
-        fashion.
-        """
-        yield self
-        for child in self.children.values():
-            yield from child.flatten()
