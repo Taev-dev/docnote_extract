@@ -6,7 +6,7 @@ from docnote import DocnoteConfig
 from docnote import Note
 
 from docnote_extract._extraction import ModulePostExtraction
-from docnote_extract.discovery import ModuleTreeNode
+from docnote_extract._module_tree import ModuleTreeNode
 from docnote_extract.normalization import NormalizedObj
 from docnote_extract.normalization import TypeSpec
 from docnote_extract.normalization import normalize_module_dict

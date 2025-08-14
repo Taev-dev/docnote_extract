@@ -24,9 +24,9 @@ from docnote_extract._crossrefs import Crossreffed
 from docnote_extract._crossrefs import is_crossreffed
 from docnote_extract._extraction import ModulePostExtraction
 from docnote_extract._extraction import TrackingRegistry
+from docnote_extract._module_tree import ModuleTreeNode
 from docnote_extract._types import Singleton
-from docnote_extract.discovery import ModuleTreeNode
-from docnote_extract.discovery import validate_config
+from docnote_extract._utils import validate_config
 
 logger = logging.getLogger(__name__)
 

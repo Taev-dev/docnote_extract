@@ -4,8 +4,8 @@ import sys
 from collections.abc import Callable
 
 from docnote_extract._extraction import ModulePostExtraction
+from docnote_extract._module_tree import ModuleTreeNodeHydrated
 from docnote_extract._types import Singleton
-from docnote_extract.discovery import ModuleTreeNodeHydrated
 from docnote_extract.normalization import NormalizedObj
 
 type ModuleObjectFilter = Callable[

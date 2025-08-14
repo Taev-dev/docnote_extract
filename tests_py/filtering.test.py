@@ -6,9 +6,9 @@ import pytest
 from docnote import DocnoteConfig
 
 from docnote_extract._extraction import ModulePostExtraction
+from docnote_extract._module_tree import ModuleTreeNode
+from docnote_extract._module_tree import ModuleTreeNodeHydrated
 from docnote_extract._types import Singleton
-from docnote_extract.discovery import ModuleTreeNode
-from docnote_extract.discovery import ModuleTreeNodeHydrated
 from docnote_extract.filtering import _conventionally_private
 from docnote_extract.filtering import _is_dunder
 from docnote_extract.filtering import filter_inclusion_rules
