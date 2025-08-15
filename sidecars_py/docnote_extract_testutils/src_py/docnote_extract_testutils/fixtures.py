@@ -69,6 +69,10 @@ def set_inspection(module: str):
 def mocked_extraction_discovery(
         module_names_to_discover: list[str]
         ) -> Generator[Mock, None, None]:
+    """Use this to explicitly pass some modules that you want discovery
+    to return to extraction, so that extraction integration tests don't
+    need to check literally the entire testpkg.
+    """
     with patch(
         'docnote_extract._extraction.discover_all_modules',
         autospec=True,
