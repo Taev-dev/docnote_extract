@@ -1,12 +1,17 @@
 import sys
 from collections.abc import Callable
+from collections.abc import Generator
 from contextlib import contextmanager
 from functools import wraps
 from typing import overload
+from unittest.mock import Mock
+from unittest.mock import patch
 
 from docnote_extract._extraction import _EXTRACTION_PHASE
 from docnote_extract._extraction import _MODULE_TO_INSPECT
 from docnote_extract._extraction import _ExtractionPhase
+
+from docnote_extract_testutils.factories import fake_discover_factory
 
 
 @overload
@@ -58,3 +63,15 @@ def set_inspection(module: str):
         yield
     finally:
         _MODULE_TO_INSPECT.reset(ctx_token)
+
+
+@contextmanager
+def mocked_extraction_discovery(
+        module_names_to_discover: list[str]
+        ) -> Generator[Mock, None, None]:
+    with patch(
+        'docnote_extract._extraction.discover_all_modules',
+        autospec=True,
+        side_effect=fake_discover_factory(module_names_to_discover)
+    ) as patched_discovery:
+        yield patched_discovery

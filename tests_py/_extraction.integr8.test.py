@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import importlib
 import sys
 from importlib.machinery import ModuleSpec
@@ -17,24 +19,10 @@ from docnote_extract._extraction import mark_special_reftype
 import docnote_extract_testpkg
 import docnote_extract_testpkg._hand_rolled
 import docnote_extract_testutils
+from docnote_extract_testutils.fixtures import mocked_extraction_discovery
 from docnote_extract_testutils.fixtures import purge_cached_testpkg_modules
 from docnote_extract_testutils.fixtures import set_inspection
 from docnote_extract_testutils.fixtures import set_phase
-
-
-def fake_discover_factory(module_names: list[str]):
-    """This creates a factory that returns ``discover_all_modules``
-    fakes. We need this extra step because the logic in
-    ``discover_and_extract`` relies upon ``discover_all_modules``
-    actually importing the modules.
-    """
-    def fake_discover_all_modules(*args, **kwargs):
-        for module_name in module_names:
-            importlib.import_module(module_name)
-
-        return module_names
-
-    return fake_discover_all_modules
 
 
 class TestExtractionFinderLoader:
@@ -136,18 +124,16 @@ class TestExtractionFinderLoader:
         assert 'docnote_extract_testpkg' not in sys.modules
         assert 'pytest' in sys.modules
 
-    @patch('docnote_extract._extraction.discover_all_modules', autospec=True)
+    @mocked_extraction_discovery([
+        'docnote_extract_testpkg',
+        'docnote_extract_testpkg._hand_rolled',
+        'docnote_extract_testpkg._hand_rolled.imports_3p_metaclass'])
     @purge_cached_testpkg_modules
-    def test_inspection_works_with_metaclasses(self, mock_discover):
+    def test_inspection_works_with_metaclasses(self):
         """After installing the import hook and while inspecting a
         module, modules that create classes using imported third-party
         metaclasses must still be inspectable.
         """
-        # Mock this out so we don't check literally the entire testpkg
-        mock_discover.side_effect = fake_discover_factory([
-            'docnote_extract_testpkg',
-            'docnote_extract_testpkg._hand_rolled',
-            'docnote_extract_testpkg._hand_rolled.imports_3p_metaclass'])
         # Don't forget to mark this, or we won't do anything!
         with mark_special_reftype({
             Crossref(
@@ -166,19 +152,16 @@ class TestExtractionFinderLoader:
         assert not is_crossreffed(to_inspect.Uses3pMetaclass)
         assert has_crossreffed_metaclass(to_inspect.Uses3pMetaclass)
 
-    @patch('docnote_extract._extraction.discover_all_modules', autospec=True)
+    @mocked_extraction_discovery([
+        'docnote_extract_testpkg',
+        'docnote_extract_testpkg._hand_rolled',
+        'docnote_extract_testpkg._hand_rolled.subclasses_3p_class'])
     @purge_cached_testpkg_modules
-    def test_inspection_works_with_subclass(self, mock_discover):
+    def test_inspection_works_with_subclass(self):
         """After installing the import hook and while inspecting a
         module, modules that create classes that inherit from
         third-party base classes must still be inspectable.
         """
-        # Mock this out so we don't check literally the entire testpkg
-        mock_discover.side_effect = fake_discover_factory([
-            'docnote_extract_testpkg',
-            'docnote_extract_testpkg._hand_rolled',
-            'docnote_extract_testpkg._hand_rolled.subclasses_3p_class'])
-
         floader = _ExtractionFinderLoader(
             frozenset({'docnote_extract_testpkg'}),
             nostub_packages=frozenset({'pytest'}),)
@@ -191,19 +174,16 @@ class TestExtractionFinderLoader:
         assert not is_crossreffed(to_inspect.Uses3pBaseclass)
         assert has_crossreffed_base(to_inspect.Uses3pBaseclass)
 
-    @patch('docnote_extract._extraction.discover_all_modules', autospec=True)
+    @mocked_extraction_discovery([
+        'docnote_extract_testpkg',
+        'docnote_extract_testpkg._hand_rolled',
+        'docnote_extract_testpkg._hand_rolled.imports_from_parent'])
     @purge_cached_testpkg_modules
-    def test_parent_imports_stubbed(self, mock_discover):
+    def test_parent_imports_stubbed(self):
         """After installing the import hook and while inspecting a
         module, imports from that module's parent module must still be
         stubbed.
         """
-        # Mock this out so we don't check literally the entire testpkg
-        mock_discover.side_effect = fake_discover_factory([
-            'docnote_extract_testpkg',
-            'docnote_extract_testpkg._hand_rolled',
-            'docnote_extract_testpkg._hand_rolled.imports_from_parent'])
-
         floader = _ExtractionFinderLoader(
             frozenset({'docnote_extract_testpkg'}),
             nostub_packages=frozenset({'pytest'}),)
@@ -215,19 +195,16 @@ class TestExtractionFinderLoader:
         assert not is_crossreffed(to_inspect)
         assert is_crossreffed(to_inspect.SOME_CONSTANT)
 
-    @patch('docnote_extract._extraction.discover_all_modules', autospec=True)
+    @mocked_extraction_discovery([
+        'docnote_extract_testpkg',
+        'docnote_extract_testpkg._hand_rolled',
+        'docnote_extract_testpkg._hand_rolled.imports_from_parent'])
     @purge_cached_testpkg_modules
-    def test_tracking_imports(self, mock_discover):
+    def test_tracking_imports(self):
         """After installing the import hook and while inspecting a
         module, imports from a nostub module must nonetheless be
         tracked.
         """
-        # Mock this out so we don't check literally the entire testpkg
-        mock_discover.side_effect = fake_discover_factory([
-            'docnote_extract_testpkg',
-            'docnote_extract_testpkg._hand_rolled',
-            'docnote_extract_testpkg._hand_rolled.imports_from_parent'])
-
         floader = _ExtractionFinderLoader(
             frozenset({'docnote_extract_testpkg'}),
             nostub_packages=frozenset({'pytest'}),
@@ -283,21 +260,18 @@ class TestExtractionFinderLoader:
             'docnote_extract_testpkg._hand_rolled',
             'SOME_SENTINEL')
 
-    @patch('docnote_extract._extraction.discover_all_modules', autospec=True)
-    @purge_cached_testpkg_modules
-    def test_relative_imports_stubbed(self, mock_discover):
-        """After installing the import hook and while inspecting a
-        module, relative imports must A) work and B) still be
-        stubbed.
-        """
-        # Mock this out so we don't check literally the entire testpkg
-        mock_discover.side_effect = fake_discover_factory([
+    @mocked_extraction_discovery([
             'docnote_extract_testpkg',
             'docnote_extract_testpkg._hand_rolled',
             'docnote_extract_testpkg._hand_rolled.noteworthy',
             'docnote_extract_testpkg._hand_rolled.relativity',
             'docnote_extract_testpkg._hand_rolled.uses_import_names',])
-
+    @purge_cached_testpkg_modules
+    def test_relative_imports_stubbed(self):
+        """After installing the import hook and while inspecting a
+        module, relative imports must A) work and B) still be
+        stubbed.
+        """
         floader = _ExtractionFinderLoader(
             frozenset({'docnote_extract_testpkg'}),
             nostub_packages=frozenset({'pytest'}))
@@ -311,19 +285,16 @@ class TestExtractionFinderLoader:
         assert is_crossreffed(to_inspect.func_with_config)
         assert is_crossreffed(to_inspect.uses_import_names)
 
-    @patch('docnote_extract._extraction.discover_all_modules', autospec=True)
+    @mocked_extraction_discovery([
+        'docnote_extract_testpkg',
+        'docnote_extract_testpkg._hand_rolled',
+        'docnote_extract_testpkg._hand_rolled.uses_import_names'])
     @purge_cached_testpkg_modules
-    def test_import_names_available(self, mock_discover):
+    def test_import_names_available(self):
         """After installing the import hook and while inspecting a
         module, import-relevant names like ``__file__`` and ``__name__``
         must exist.
         """
-        # Mock this out so we don't check literally the entire testpkg
-        mock_discover.side_effect = fake_discover_factory([
-            'docnote_extract_testpkg',
-            'docnote_extract_testpkg._hand_rolled',
-            'docnote_extract_testpkg._hand_rolled.uses_import_names',])
-
         floader = _ExtractionFinderLoader(
             frozenset({'docnote_extract_testpkg'}),
             nostub_packages=frozenset({'pytest'}),)
