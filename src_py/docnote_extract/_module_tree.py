@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import logging
 import typing
 from collections.abc import Collection
 from collections.abc import Iterator
@@ -8,21 +7,12 @@ from dataclasses import KW_ONLY
 from dataclasses import dataclass
 from dataclasses import field
 from dataclasses import fields as dc_fields
-from importlib import import_module
-from pkgutil import iter_modules
-from types import ModuleType
-from typing import Any
-from typing import Literal
 from typing import Self
 
-from docnote import DOCNOTE_CONFIG_ATTR_FOR_MODULES
 from docnote import DocnoteConfig
-from docnote import DocnoteConfigParams
 
-from docnote_extract import KNOWN_MARKUP_LANGS
 from docnote_extract._utils import coerce_config
 from docnote_extract._utils import validate_config
-from docnote_extract.exceptions import InvalidConfig
 
 if typing.TYPE_CHECKING:
     from docnote_extract._extraction import ModulePostExtraction
