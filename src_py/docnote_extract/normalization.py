@@ -425,7 +425,7 @@ class NormalizedType:
 @dataclass(slots=True, frozen=True)
 class LazyResolvingValue:
     _crossref: Crossref | None
-    _value: Singleton.MISSING | Any
+    _value: Literal[Singleton.MISSING] | Any
 
     def __format__(self, fmtinfo: str) -> str:
         """If you don't want to actually resolve the annotation, and you
