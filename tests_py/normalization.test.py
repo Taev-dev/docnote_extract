@@ -6,7 +6,7 @@ from docnote import DocnoteConfig
 from docnote import Note
 
 from docnote_extract._extraction import ModulePostExtraction
-from docnote_extract.discovery import ModuleTreeNode
+from docnote_extract._module_tree import ConfiguredModuleTreeNode
 from docnote_extract.normalization import NormalizedObj
 from docnote_extract.normalization import TypeSpec
 from docnote_extract.normalization import normalize_module_dict
@@ -31,10 +31,10 @@ class TestNormalizeModuleMembers:
             ModulePostExtraction,
             import_module('docnote_extract_testutils.fixtures'))
         docnote._docnote_extract_import_tracking_registry = {}
-        module_tree = ModuleTreeNode(
+        module_tree = ConfiguredModuleTreeNode(
             'docnote_extract_testutils',
             'docnote_extract_testutils',
-            {'taevcode': ModuleTreeNode(
+            {'taevcode': ConfiguredModuleTreeNode(
                 'docnote_extract_testutils.fixtures',
                 'fixtures',
                 effective_config=DocnoteConfig())},
@@ -55,10 +55,10 @@ class TestNormalizeModuleMembers:
             ModulePostExtraction,
             import_module('docnote_extract_testpkg._hand_rolled'))
         docnote._docnote_extract_import_tracking_registry = {}
-        module_tree = ModuleTreeNode(
+        module_tree = ConfiguredModuleTreeNode(
             'docnote_extract_testpkg',
             'docnote_extract_testpkg',
-            {'taevcode': ModuleTreeNode(
+            {'taevcode': ConfiguredModuleTreeNode(
                 'docnote_extract_testpkg._hand_rolled',
                 '_hand_rolled',
                 effective_config=DocnoteConfig())},
@@ -82,10 +82,10 @@ class TestNormalizeModuleMembers:
             ModulePostExtraction,
             import_module('docnote_extract_testpkg._hand_rolled'))
         docnote._docnote_extract_import_tracking_registry = {}
-        module_tree = ModuleTreeNode(
+        module_tree = ConfiguredModuleTreeNode(
             'docnote_extract_testpkg',
             'docnote_extract_testpkg',
-            {'taevcode': ModuleTreeNode(
+            {'taevcode': ConfiguredModuleTreeNode(
                 'docnote_extract_testpkg._hand_rolled',
                 '_hand_rolled',
                 effective_config=DocnoteConfig())},
@@ -111,13 +111,13 @@ class TestNormalizeModuleMembers:
             ModulePostExtraction,
             import_module('docnote_extract_testpkg._hand_rolled.noteworthy'))
         test_module._docnote_extract_import_tracking_registry = {}
-        module_tree = ModuleTreeNode(
+        module_tree = ConfiguredModuleTreeNode(
             'docnote_extract_testpkg',
             'docnote_extract_testpkg',
-            {'_hand_rolled': ModuleTreeNode(
+            {'_hand_rolled': ConfiguredModuleTreeNode(
                 'docnote_extract_testpkg._hand_rolled',
                 '_hand_rolled',
-                {'noteworthy': ModuleTreeNode(
+                {'noteworthy': ConfiguredModuleTreeNode(
                     'docnote_extract_testpkg._hand_rolled.noteworthy',
                     'noteworthy',
                     effective_config=DocnoteConfig())},
@@ -145,13 +145,13 @@ class TestNormalizeModuleMembers:
             ModulePostExtraction,
             import_module('docnote_extract_testpkg._hand_rolled.noteworthy'))
         test_module._docnote_extract_import_tracking_registry = {}
-        module_tree = ModuleTreeNode(
+        module_tree = ConfiguredModuleTreeNode(
             'docnote_extract_testpkg',
             'docnote_extract_testpkg',
-            {'_hand_rolled': ModuleTreeNode(
+            {'_hand_rolled': ConfiguredModuleTreeNode(
                 'docnote_extract_testpkg._hand_rolled',
                 '_hand_rolled',
-                {'noteworthy': ModuleTreeNode(
+                {'noteworthy': ConfiguredModuleTreeNode(
                     'docnote_extract_testpkg._hand_rolled.noteworthy',
                     'noteworthy',
                     effective_config=DocnoteConfig())},
@@ -179,13 +179,13 @@ class TestNormalizeModuleMembers:
             ModulePostExtraction,
             import_module('docnote_extract_testpkg._hand_rolled.noteworthy'))
         test_module._docnote_extract_import_tracking_registry = {}
-        module_tree = ModuleTreeNode(
+        module_tree = ConfiguredModuleTreeNode(
             'docnote_extract_testpkg',
             'docnote_extract_testpkg',
-            {'_hand_rolled': ModuleTreeNode(
+            {'_hand_rolled': ConfiguredModuleTreeNode(
                 'docnote_extract_testpkg._hand_rolled',
                 '_hand_rolled',
-                {'noteworthy': ModuleTreeNode(
+                {'noteworthy': ConfiguredModuleTreeNode(
                     'docnote_extract_testpkg._hand_rolled.noteworthy',
                     'noteworthy',
                     effective_config=DocnoteConfig(enforce_known_lang=False))},
@@ -213,13 +213,13 @@ class TestNormalizeModuleMembers:
             ModulePostExtraction,
             import_module('docnote_extract_testpkg._hand_rolled.noteworthy'))
         test_module._docnote_extract_import_tracking_registry = {}
-        module_tree = ModuleTreeNode(
+        module_tree = ConfiguredModuleTreeNode(
             'docnote_extract_testpkg',
             'docnote_extract_testpkg',
-            {'_hand_rolled': ModuleTreeNode(
+            {'_hand_rolled': ConfiguredModuleTreeNode(
                 'docnote_extract_testpkg._hand_rolled',
                 '_hand_rolled',
-                {'noteworthy': ModuleTreeNode(
+                {'noteworthy': ConfiguredModuleTreeNode(
                     'docnote_extract_testpkg._hand_rolled.noteworthy',
                     'noteworthy',
                     effective_config=DocnoteConfig())},

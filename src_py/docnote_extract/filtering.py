@@ -4,8 +4,8 @@ import sys
 from collections.abc import Callable
 
 from docnote_extract._extraction import ModulePostExtraction
+from docnote_extract._module_tree import ConfiguredModuleTreeNode
 from docnote_extract._types import Singleton
-from docnote_extract.discovery import ModuleTreeNodeHydrated
 from docnote_extract.normalization import NormalizedObj
 
 type ModuleObjectFilter = Callable[
@@ -16,8 +16,8 @@ type ObjectFilter = Callable[
 
 
 def filter_modules(
-        module_tree: ModuleTreeNodeHydrated,
-        ) -> ModuleTreeNodeHydrated | None:
+        module_tree: ConfiguredModuleTreeNode,
+        ) -> ConfiguredModuleTreeNode | None:
     """Recursively walks the passed module tree, filtering out any
     private modules (modules with a relname beginning with an
     underscore, but not ``__dunders__``). Note that this can be

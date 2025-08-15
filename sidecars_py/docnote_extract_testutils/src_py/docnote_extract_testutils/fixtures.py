@@ -1,18 +1,25 @@
 import sys
 from collections.abc import Callable
+from collections.abc import Generator
 from contextlib import contextmanager
+from functools import wraps
 from typing import overload
+from unittest.mock import Mock
+from unittest.mock import patch
 
 from docnote_extract._extraction import _EXTRACTION_PHASE
 from docnote_extract._extraction import _MODULE_TO_INSPECT
 from docnote_extract._extraction import _ExtractionPhase
+
+from docnote_extract_testutils.factories import fake_discover_factory
 
 
 @overload
 def purge_cached_testpkg_modules() -> None: ...
 @overload
 def purge_cached_testpkg_modules[T: Callable](func: T, /) -> T: ...
-def purge_cached_testpkg_modules(func=None, /):
+def purge_cached_testpkg_modules[T: Callable](
+        func : T | None = None, /) -> T | None:
     """Use this to remove every testpkg module from sys.modules.
     Manually applied to tests for performance reasons.
 
@@ -22,11 +29,12 @@ def purge_cached_testpkg_modules(func=None, /):
         _do_purge_cached_testpkg_modules()
 
     else:
+        @wraps(func)
         def closure(*args, **kwargs):
             _do_purge_cached_testpkg_modules()
             return func(*args, **kwargs)
 
-        return closure
+        return closure  # type: ignore
 
 
 def _do_purge_cached_testpkg_modules():
@@ -55,3 +63,19 @@ def set_inspection(module: str):
         yield
     finally:
         _MODULE_TO_INSPECT.reset(ctx_token)
+
+
+@contextmanager
+def mocked_extraction_discovery(
+        module_names_to_discover: list[str]
+        ) -> Generator[Mock, None, None]:
+    """Use this to explicitly pass some modules that you want discovery
+    to return to extraction, so that extraction integration tests don't
+    need to check literally the entire testpkg.
+    """
+    with patch(
+        'docnote_extract._extraction.discover_all_modules',
+        autospec=True,
+        side_effect=fake_discover_factory(module_names_to_discover)
+    ) as patched_discovery:
+        yield patched_discovery

@@ -46,7 +46,7 @@ class ParamTraversal:
     name: str
 
 
-type _CrossrefTraversal = (
+type CrossrefTraversal = (
     GetattrTraversal
     | CallTraversal
     | GetitemTraversal
@@ -72,14 +72,14 @@ class Crossref:
             name within its immediate parent scope; that is included within
             traversals.''')]
     traversals: Annotated[
-            tuple[_CrossrefTraversal, ...],
+            tuple[CrossrefTraversal, ...],
             Note('''The traversal stack describes which extra steps were taken
                 (attribute or getitem references, function calls, parameters,
                 etc) to arrive at a final crossref. Empty tuples are used for
                 modules and their toplevel objects.''')
         ] = ()
 
-    def __truediv__(self, traversal: _CrossrefTraversal) -> Crossref:
+    def __truediv__(self, traversal: CrossrefTraversal) -> Crossref:
         return Crossref(
             module_name=self.module_name,
             toplevel_name=self.toplevel_name,
@@ -91,7 +91,7 @@ class Crossreffed(Protocol):
 
 
 class _ClassWithCrossreffedBaseProtocol(Protocol):
-    _docnote_extract_base_classes: tuple[type]
+    _docnote_extract_base_classes: tuple[type | Crossreffed, ...]
 
 
 class ClassWithCrossreffedBase(type, _ClassWithCrossreffedBaseProtocol):
@@ -101,7 +101,7 @@ class ClassWithCrossreffedBase(type, _ClassWithCrossreffedBaseProtocol):
 
 
 class _ClassWithCrossreffedMetaclassProtocol(Protocol):
-    _docnote_extract_metaclass: Crossref
+    _docnote_extract_metaclass: Crossreffed
 
 
 class ClassWithCrossreffedMetaclass(
@@ -235,9 +235,8 @@ class CrossrefMetaclassMetaclass(type):
                 'docnote_extract internal error: concrete MetaclassMetaclass '
                 + 'is not crossreffed!', metacls)
 
-        metaclass_metadata = metacls._docnote_extract_metadata
         cls = super().__new__(type, name, injected_bases, namespace)
-        cls._docnote_extract_metaclass = metaclass_metadata
+        cls._docnote_extract_metaclass = metacls
         return cls
 
 

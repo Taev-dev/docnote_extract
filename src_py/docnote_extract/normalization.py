@@ -24,9 +24,9 @@ from docnote_extract._crossrefs import Crossreffed
 from docnote_extract._crossrefs import is_crossreffed
 from docnote_extract._extraction import ModulePostExtraction
 from docnote_extract._extraction import TrackingRegistry
+from docnote_extract._module_tree import ConfiguredModuleTreeNode
 from docnote_extract._types import Singleton
-from docnote_extract.discovery import ModuleTreeNode
-from docnote_extract.discovery import validate_config
+from docnote_extract._utils import validate_config
 
 logger = logging.getLogger(__name__)
 
@@ -75,10 +75,6 @@ def normalize_annotation(
     """Given the annotation for a particular $thing, this extracts out
     any the type hint itself, any attached notes, config params, and
     also any additional ``Annotated`` extras.
-
-    TODO: this also needs to normalize the type itself; the result
-    should be crossreffified and just generally suitable for direct
-    use in documentation generation
     """
     if annotation is Singleton.MISSING:
         return NormalizedAnnotation(
@@ -106,16 +102,17 @@ def normalize_annotation(
     config_params: DocnoteConfigParams = {}
 
     notes: list[Note] = []
-    external_annotateds = []
+    external_annotateds: list[LazyResolvingValue] = []
     for annotated in all_annotateds:
         # Note: if the note has its own config, that gets used later; it
         # doesn't modify the rest of the notes!
         if isinstance(annotated, Note):
             notes.append(annotated)
-        elif isinstance(annotation, DocnoteConfig):
-            config_params.update(annotation.as_nontotal_dict())
+        elif isinstance(annotated, DocnoteConfig):
+            config_params.update(annotated.as_nontotal_dict())
         else:
-            external_annotateds.append(annotation)
+            external_annotateds.append(
+                LazyResolvingValue.from_annotated(annotated))
 
     return NormalizedAnnotation(
         typespec=TypeSpec.from_typehint(type_),
@@ -124,17 +121,14 @@ def normalize_annotation(
         annotateds=tuple(external_annotateds))
 
 
-# Ugh, normalization is always more complicated than it needs to be.
-def normalize_module_dict(  # noqa: C901, PLR0912
+def normalize_module_dict(
         module: ModulePostExtraction,
         module_tree: Annotated[
-                ModuleTreeNode,
+                ConfiguredModuleTreeNode,
                 Note('''Note that this needs to be the ^^full^^ firstparty
                     module tree, and not just the node for the current module!
                     ''')]
         ) -> dict[str, NormalizedObj]:
-    """TODO: can this be DRY'ed up via ``normalize_annotation``?
-    """
     from_annotations: dict[str, Any] = get_type_hints(
         module, include_extras=True)
     dunder_all: set[str] = set(getattr(module, '__all__', ()))
@@ -160,22 +154,6 @@ def normalize_module_dict(  # noqa: C901, PLR0912
             containing_dunder_all=dunder_all,
             containing_annotation_names=set(from_annotations))
 
-        # Here we're associating the object with any module-level annotations,
-        # but we're not yet separating the docnote annotations from the rest
-        raw_annotation = from_annotations.get(
-            name, Singleton.MISSING)
-        if raw_annotation is Singleton.MISSING:
-            all_annotateds = ()
-            type_ = raw_annotation
-        else:
-            origin = get_origin(raw_annotation)
-            if origin is Annotated:
-                type_ = raw_annotation.__origin__
-                all_annotateds = raw_annotation.__metadata__
-            else:
-                type_ = raw_annotation
-                all_annotateds = ()
-
         # Here we're starting to construct an effective config for the object.
         # Note that this is kinda unseparable from the next part, since we're
         # iterating over all of the annotations and separating them out into
@@ -199,34 +177,23 @@ def normalize_module_dict(  # noqa: C901, PLR0912
         # This gets any config that was attrached via decorator, for classes
         # and functions.
         if hasattr(obj, DOCNOTE_CONFIG_ATTR):
-            config_params.update(
-                getattr(obj, DOCNOTE_CONFIG_ATTR).as_nontotal_dict())
+            decorated_config = getattr(obj, DOCNOTE_CONFIG_ATTR)
+            # Beware: remove this, and you'll run into infinite loops!
+            if not is_crossreffed(decorated_config):
+                config_params.update(decorated_config.as_nontotal_dict())
 
-        # Now finally we're looking on the annotations themselves. Typically
-        # these are module-level variables.
-        notes: list[Note] = []
-        external_annotateds = []
-        for annotation in all_annotateds:
-            # Note: if the note has its own config, that gets used later; it
-            # doesn't modify the rest of the notes!
-            if isinstance(annotation, Note):
-                notes.append(annotation)
-            elif isinstance(annotation, DocnoteConfig):
-                config_params.update(annotation.as_nontotal_dict())
-            else:
-                external_annotateds.append(annotation)
+        raw_annotation = from_annotations.get(name, Singleton.MISSING)
+        normalized_obj_annotations = normalize_annotation(raw_annotation)
+        config_params.update(normalized_obj_annotations.config_params)
 
         # All done. Filtering comes later; here we JUST want to do the
         # normalization!
         retval[name] = NormalizedObj(
             obj_or_stub=obj,
-            annotateds=tuple(external_annotateds),
+            annotateds=normalized_obj_annotations.annotateds,
             effective_config=DocnoteConfig(**config_params),
-            notes=tuple(notes),
-            typespec=
-                TypeSpec.from_typehint(type_)
-                if type_ is not Singleton.MISSING
-                else None,
+            notes=normalized_obj_annotations.notes,
+            typespec=normalized_obj_annotations.typespec,
             canonical_module=canonical_module,
             canonical_name=canonical_name)
 
@@ -458,7 +425,7 @@ class NormalizedType:
 @dataclass(slots=True, frozen=True)
 class LazyResolvingValue:
     _crossref: Crossref | None
-    _value: None | Any
+    _value: Literal[Singleton.MISSING] | Any
 
     def __format__(self, fmtinfo: str) -> str:
         """If you don't want to actually resolve the annotation, and you
@@ -486,14 +453,14 @@ class LazyResolvingValue:
         if is_crossreffed(annotated):
             return cls(
                 _crossref=annotated._docnote_extract_metadata,
-                _value=None)
+                _value=Singleton.MISSING)
         else:
             return cls(
                 _crossref=None,
                 _value=annotated)
 
     def __post_init__(self):
-        if not ((self._crossref is None) ^ (self._value is None)):
+        if not ((self._crossref is None) ^ (self._value is Singleton.MISSING)):
             raise TypeError(
                 'LazyResolvingValue can only have a crossref xor value!',
                 self)
