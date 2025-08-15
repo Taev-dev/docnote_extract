@@ -1,14 +1,18 @@
 from __future__ import annotations
 
+import inspect
 import typing
+from collections.abc import Sequence
 from typing import Any
 from typing import Literal
 
 from docnote import DOCNOTE_CONFIG_ATTR_FOR_MODULES
 from docnote import DocnoteConfig
 from docnote import DocnoteConfigParams
+from docnote import Note
 
 from docnote_extract import KNOWN_MARKUP_LANGS
+from docnote_extract._types import DocText
 from docnote_extract.exceptions import InvalidConfig
 
 if typing.TYPE_CHECKING:
@@ -58,3 +62,46 @@ def coerce_config(
     combination: DocnoteConfigParams = {
         **parent_stackables, **explicit_config.as_nontotal_dict()}
     return DocnoteConfig(**combination)
+
+
+def textify_notes(
+        raw_notes: Sequence[Note],
+        effective_config: DocnoteConfig
+        ) -> tuple[DocText, ...]:
+    retval: list[DocText] = []
+    for raw_note in raw_notes:
+        # Note that the passed effective_config will already have been
+        # validated at this point, but not the note's direct config.
+        if raw_note.config is not None:
+            # Note that we don't want just the stackables here; this is already
+            # an effective config for the thing the note is attached to, so
+            # we've already applied stacking rules. We want the whole thing.
+            combination: DocnoteConfigParams = {
+                **effective_config.as_nontotal_dict(),
+                **raw_note.config.as_nontotal_dict()}
+            effective_config = DocnoteConfig(**combination)
+            validate_config(effective_config, f'On-note config for {raw_note}')
+
+        retval.append(DocText(
+            value=inspect.cleandoc(raw_note.value),
+            markup_lang=effective_config.markup_lang))
+
+    return tuple(retval)
+
+
+def extract_docstring(
+        obj: Any,
+        effective_config: DocnoteConfig
+        ) -> DocText | None:
+    """Gets the DocText version of the docstring, if one is defined.
+    Otherwise, returns None.
+    """
+    # Note that this gets cleaned up internally by ``inspect.cleandoc`` (see
+    # stdlib docs) and also normalized to str | None.
+    raw_clean_docstring = inspect.getdoc(obj)
+    if not raw_clean_docstring or raw_clean_docstring.isspace():
+        return None
+    else:
+        return DocText(
+            value=raw_clean_docstring,
+            markup_lang=effective_config.markup_lang)

@@ -5,19 +5,16 @@ from types import SimpleNamespace
 from typing import cast
 
 import pytest
-from docnote import DocnoteConfig
 
 from docnote_extract._crossrefs import Crossref
 from docnote_extract._crossrefs import Crossreffed
-from docnote_extract._summarization import CallableDesc
-from docnote_extract._summarization import ClassDesc
-from docnote_extract._summarization import CrossrefDesc
-from docnote_extract._summarization import ModuleDesc
-from docnote_extract._summarization import ObjClassification
-from docnote_extract._summarization import ParamDesc
-from docnote_extract._summarization import RetvalDesc
-from docnote_extract._summarization import VariableDesc
-from docnote_extract._summarization import _DescBase
+from docnote_extract._types import CallableDesc
+from docnote_extract._types import ClassDesc
+from docnote_extract._types import CrossrefDesc
+from docnote_extract._types import DescBase
+from docnote_extract._types import ModuleDesc
+from docnote_extract._types import ObjClassification
+from docnote_extract._types import VariableDesc
 
 fake_module = ModuleType('foo')
 def fake_func(): ...
@@ -58,7 +55,7 @@ class TestObjClassification:
             (FakeClass.staticmethod_, CallableDesc),
             (int.__add__, CallableDesc),])
     def test_get_desc_class(
-            self, src_obj, expected_retval: type[_DescBase] | None):
+            self, src_obj, expected_retval: type[DescBase] | None):
         """get_desc_class must return the expected desc class for the
         underlying object, or None if a reftype.
         """
