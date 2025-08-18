@@ -13,7 +13,7 @@ from typing import Self
 from docnote import DocnoteConfig
 from docnote import Note
 
-from docnote_extract._types import ModuleDesc
+from docnote_extract._types import ModuleSummary
 from docnote_extract._utils import coerce_config
 from docnote_extract._utils import validate_config
 
@@ -179,7 +179,7 @@ class ConfiguredModuleTreeNode(ModuleTreeNode):
 @dataclass(slots=True, frozen=True)
 class SummaryTreeNode(ModuleTreeNode):
     _: KW_ONLY
-    module_summary: ModuleDesc = field(compare=False, repr=False)
+    module_summary: ModuleSummary = field(compare=False, repr=False)
     to_document: Annotated[
             bool | None,
             Note('''This is the value determined during filtering for whether
@@ -198,7 +198,7 @@ class SummaryTreeNode(ModuleTreeNode):
     def from_configured_module_tree(
             cls,
             configured_tree_node: ConfiguredModuleTreeNode,
-            summary_lookup: dict[str, ModuleDesc]
+            summary_lookup: dict[str, ModuleSummary]
             ) -> SummaryTreeNode:
         """Uses a ``{module_name: module_summary}`` lookup to
         recursively convert a single``ConfiguredModuleTreeNode``

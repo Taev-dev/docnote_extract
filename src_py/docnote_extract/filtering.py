@@ -7,7 +7,7 @@ from docnote_extract._crossrefs import GetattrTraversal
 from docnote_extract._extraction import ModulePostExtraction
 from docnote_extract._module_tree import ConfiguredModuleTreeNode
 from docnote_extract._module_tree import SummaryTreeNode
-from docnote_extract._types import ModuleDesc
+from docnote_extract._types import ModuleSummary
 from docnote_extract.normalization import NormalizedObj
 
 type ModuleObjectFilter = Callable[
@@ -71,7 +71,7 @@ def filter_module_summaries(
 
 
 def filter_canonical_ownership(
-        module_summary: ModuleDesc,
+        module_summary: ModuleSummary,
         *,
         remove_unknown_origins: bool = True,
         ) -> None:
@@ -114,7 +114,7 @@ def filter_canonical_ownership(
 
 
 def _set_canonical_ownership(
-        module_summary: ModuleDesc,
+        module_summary: ModuleSummary,
         toplevel_name: str,
         disowned: bool
         ) -> None:
@@ -124,7 +124,7 @@ def _set_canonical_ownership(
         desc.metadata.disowned = disowned
 
 
-def filter_private_summaries(module_summary: ModuleDesc) -> None:
+def filter_private_summaries(module_summary: ModuleSummary) -> None:
     """Given an existing module summary with initialized metadata (ie,
     ``extracted_inclusion`` has been set), this applies first the
     normal python conventions (single-underscore names are private),

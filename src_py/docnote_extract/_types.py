@@ -104,7 +104,7 @@ class ObjClassification:
             is_member_descriptor=inspect.ismemberdescriptor(obj),
             is_callable=callable(obj))
 
-    def get_desc_class(self) -> type[DescBase] | None:
+    def get_desc_class(self) -> type[SummaryBase] | None:
         """Given the current classification, returns which description
         type should be applied to the object, so that the caller can
         then create a description instance for it.
@@ -114,13 +114,13 @@ class ObjClassification:
         """
         if self.is_reftype:
             if self.has_traversals:
-                return VariableDesc
+                return VariableSummary
             else:
-                return CrossrefDesc
+                return CrossrefSummary
         if self.is_class:
-            return ClassDesc
+            return ClassSummary
         if self.is_module:
-            return ModuleDesc
+            return ModuleSummary
         if (
             self.is_method
             or self.is_function
@@ -131,9 +131,9 @@ class ObjClassification:
             or (self.is_member_descriptor and self.is_callable)
             or (self.is_method_descriptor and self.is_callable)
         ):
-            return CallableDesc
+            return CallableSummary
 
-        return VariableDesc
+        return VariableSummary
 
 
 class CallableColor(Enum):
@@ -196,7 +196,7 @@ class DocText:
     markup_lang: str | MarkupLang | None
 
 
-class DescMetadataProtocol(Protocol):
+class SummaryMetadataProtocol(Protocol):
     extracted_inclusion: Annotated[
         bool | None,
         Note('''This directly copies the underlying object's
@@ -273,13 +273,13 @@ class DescMetadataProtocol(Protocol):
             ''')]
 
 
-class DescMetadataFactoryProtocol[T: DescMetadataProtocol](Protocol):
+class SummaryMetadataFactoryProtocol[T: SummaryMetadataProtocol](Protocol):
 
     def __call__(
             self,
             *,
             classification: ObjClassification | None,
-            desc_class: type[DescBase],
+            desc_class: type[SummaryBase],
             crossref: Crossref | None,
             annotateds: Annotated[
                 tuple[LazyResolvingValue, ...],
@@ -305,15 +305,15 @@ class DescMetadataFactoryProtocol[T: DescMetadataProtocol](Protocol):
         ...
 
 
-class _DescBaseProtocol[T: DescMetadataProtocol](Protocol):
+class _SummaryBaseProtocol[T: SummaryMetadataProtocol](Protocol):
 
-    def traverse(self, traversal: CrossrefTraversal) -> DescBase[T]:
+    def traverse(self, traversal: CrossrefTraversal) -> SummaryBase[T]:
         """If the object has a traversal with the passed name, return
         it. Otherwise, raise ``LookupError``.
         """
         ...
 
-    def flatten(self) -> Iterator[DescBase[T]]:
+    def flatten(self) -> Iterator[SummaryBase[T]]:
         """Yield all of the nodes at the description, recursively,
         in a depth-first fashion. Primarily intended for updating
         metadata values based on filters.
@@ -323,8 +323,15 @@ class _DescBaseProtocol[T: DescMetadataProtocol](Protocol):
         ...
 
 
+type _NamespaceMemberSummary[T: SummaryMetadataProtocol] = (
+    ClassSummary[T]
+    | VariableSummary[T]
+    | CallableSummary[T]
+    | CrossrefSummary[T])
+
+
 @dataclass(slots=True, frozen=True, kw_only=True)
-class DescBase[T: DescMetadataProtocol](_DescBaseProtocol[T]):
+class SummaryBase[T: SummaryMetadataProtocol](_SummaryBaseProtocol[T]):
     crossref: Crossref | None
     ordering_index: int | None
     child_groups: Annotated[
@@ -337,35 +344,30 @@ class DescBase[T: DescMetadataProtocol](_DescBaseProtocol[T]):
                 attachments.''')]
     metadata: T = field(compare=False, repr=False)
 
-    def __truediv__(self, traversal: CrossrefTraversal) -> DescBase[T]:
+    def __truediv__(self, traversal: CrossrefTraversal) -> SummaryBase[T]:
         return self.traverse(traversal)
 
 
 @dataclass(slots=True, frozen=True, kw_only=True)
-class ModuleDesc[T: DescMetadataProtocol](DescBase[T]):
+class ModuleSummary[T: SummaryMetadataProtocol](SummaryBase[T]):
     name: Annotated[str, Note('The module fullname, ex ``foo.bar.baz``.')]
     dunder_all: frozenset[str] | None
     docstring: DocText | None
-    members: frozenset[
-        ClassDesc[T]
-        | VariableDesc[T]
-        | CallableDesc[T]
-        | CrossrefDesc[T]]
+    members: frozenset[_NamespaceMemberSummary[T]]
 
-    _member_lookup: dict[
-            CrossrefTraversal,
-            ClassDesc[T] | VariableDesc[T] | CallableDesc[T] | CrossrefDesc[T]
-        ] = field(default_factory=dict, repr=False, init=False, compare=False)
+    _member_lookup: \
+        dict[CrossrefTraversal, _NamespaceMemberSummary[T]] = field(
+            default_factory=dict, repr=False, init=False, compare=False)
 
     def __post_init__(self):
         for member in self.members:
             self._member_lookup[GetattrTraversal(member.name)] = member
 
-    def traverse(self, traversal: CrossrefTraversal) -> DescBase[T]:
+    def traverse(self, traversal: CrossrefTraversal) -> SummaryBase[T]:
         # KeyError is a LookupError subclass, so this is fine.
         return self._member_lookup[traversal]
 
-    def flatten(self) -> Iterator[DescBase[T]]:
+    def flatten(self) -> Iterator[SummaryBase[T]]:
         yield self
         for child in self.members:
             yield from child.flatten()
@@ -381,7 +383,7 @@ class ModuleDesc[T: DescMetadataProtocol](DescBase[T]):
 
 
 @dataclass(slots=True, frozen=True, kw_only=True)
-class CrossrefDesc[T: DescMetadataProtocol](DescBase[T]):
+class CrossrefSummary[T: SummaryMetadataProtocol](SummaryBase[T]):
     """Used when something is being re-exported (at the module level) or
     is otherwise a direct reference to something else (for example, a
     classvar referencing an imported enum value).
@@ -397,17 +399,17 @@ class CrossrefDesc[T: DescMetadataProtocol](DescBase[T]):
             re-export (in addition to any notes from its definition site).''')]
     src_crossref: Crossref
 
-    def traverse(self, traversal: CrossrefTraversal) -> DescBase[T]:
+    def traverse(self, traversal: CrossrefTraversal) -> SummaryBase[T]:
         raise LookupError(
             'Crossref descriptions have no traversals', self, traversal)
 
-    def flatten(self) -> Iterator[DescBase[T]]:
+    def flatten(self) -> Iterator[SummaryBase[T]]:
         yield self
 
 
 @dataclass(slots=True, frozen=True, kw_only=True)
-class VariableDesc[T: DescMetadataProtocol](DescBase[T]):
-    """VariableDesc instances are used for module variables as well as
+class VariableSummary[T: SummaryMetadataProtocol](SummaryBase[T]):
+    """VariableSummary instances are used for module variables as well as
     class members. Note that within a class, variables annotated as
     ``ClassVar``s will have the literal ``ClassVar`` added to their
     ``annotations`` tuple.
@@ -425,16 +427,16 @@ class VariableDesc[T: DescMetadataProtocol](DescBase[T]):
         tuple[DocText, ...],
         Note('The contents of any ``Note``s attached to the variable.')]
 
-    def traverse(self, traversal: CrossrefTraversal) -> DescBase[T]:
+    def traverse(self, traversal: CrossrefTraversal) -> SummaryBase[T]:
         raise LookupError(
             'Variable descriptions have no traversals', self, traversal)
 
-    def flatten(self) -> Iterator[DescBase[T]]:
+    def flatten(self) -> Iterator[SummaryBase[T]]:
         yield self
 
 
 @dataclass(slots=True, frozen=True, kw_only=True)
-class ClassDesc[T: DescMetadataProtocol](DescBase[T]):
+class ClassSummary[T: SummaryMetadataProtocol](SummaryBase[T]):
     """
     """
     name: str
@@ -445,33 +447,28 @@ class ClassDesc[T: DescMetadataProtocol](DescBase[T]):
             on the class itself. Implicit metaclasses inherited from base
             classes will not be detected.''')]
     bases: tuple[TypeSpec, ...]
-    members: frozenset[
-        ClassDesc[T]
-        | VariableDesc[T]
-        | CallableDesc[T]
-        | CrossrefDesc[T]]
+    members: frozenset[_NamespaceMemberSummary[T]]
 
-    _member_lookup: dict[
-            CrossrefTraversal,
-            ClassDesc[T] | VariableDesc[T] | CallableDesc[T] | CrossrefDesc[T]
-        ] = field(default_factory=dict, repr=False, init=False, compare=False)
+    _member_lookup: \
+        dict[CrossrefTraversal, _NamespaceMemberSummary[T]] = field(
+            default_factory=dict, repr=False, init=False, compare=False)
 
     def __post_init__(self):
         for member in self.members:
             self._member_lookup[GetattrTraversal(member.name)] = member
 
-    def traverse(self, traversal: CrossrefTraversal) -> DescBase[T]:
+    def traverse(self, traversal: CrossrefTraversal) -> SummaryBase[T]:
         # KeyError is a LookupError subclass, so this is fine.
         return self._member_lookup[traversal]
 
-    def flatten(self) -> Iterator[DescBase[T]]:
+    def flatten(self) -> Iterator[SummaryBase[T]]:
         yield self
         for child in self.members:
             yield from child.flatten()
 
 
 @dataclass(slots=True, frozen=True, kw_only=True)
-class CallableDesc[T: DescMetadataProtocol](DescBase[T]):
+class CallableSummary[T: SummaryMetadataProtocol](SummaryBase[T]):
     """
     """
     name: str
@@ -486,9 +483,9 @@ class CallableDesc[T: DescMetadataProtocol](DescBase[T]):
     color: CallableColor
     method_type: MethodType | None
     is_generator: bool
-    signatures: frozenset[SignatureDesc[T]]
+    signatures: frozenset[SignatureSummary[T]]
 
-    _member_lookup: dict[SignatureTraversal, SignatureDesc[T]] = field(
+    _member_lookup: dict[SignatureTraversal, SignatureSummary[T]] = field(
         default_factory=dict, repr=False, init=False, compare=False)
 
     def __post_init__(self):
@@ -502,7 +499,7 @@ class CallableDesc[T: DescMetadataProtocol](DescBase[T]):
                     self._member_lookup[
                         SignatureTraversal(member.ordering_index)] = member
 
-    def traverse(self, traversal: CrossrefTraversal) -> DescBase[T]:
+    def traverse(self, traversal: CrossrefTraversal) -> SummaryBase[T]:
         """Traversals into callables work like this:
         ++  A callable with a single signature (ie, with no overloads)
             is always referenced by ``ordering_index=None``
@@ -533,22 +530,22 @@ class CallableDesc[T: DescMetadataProtocol](DescBase[T]):
 
         return self._member_lookup[traversal]
 
-    def flatten(self) -> Iterator[DescBase[T]]:
+    def flatten(self) -> Iterator[SummaryBase[T]]:
         yield self
         for child in self.signatures:
             yield from child.flatten()
 
 
 @dataclass(slots=True, frozen=True, kw_only=True)
-class SignatureDesc[T: DescMetadataProtocol](DescBase[T]):
+class SignatureSummary[T: SummaryMetadataProtocol](SummaryBase[T]):
     """These are used to express a particular combination of parameters
     and return values. Callables with a single signature will typically
     have only one of these (with the exception of union types that have
     separate ``Note``s attached to individual members of the union).
     Overloaded callables will have one ``SignatureSpec`` per overload.
     """
-    params: frozenset[ParamDesc[T]]
-    retval: RetvalDesc[T]
+    params: frozenset[ParamSummary[T]]
+    retval: RetvalSummary[T]
     docstring: Annotated[
             DocText | None,
             Note('''In practice, this is typically None. However, it will be
@@ -558,14 +555,14 @@ class SignatureDesc[T: DescMetadataProtocol](DescBase[T]):
                 Note that in this case, the docstring for the implementation
                 will be included in the parent callable.''')]
 
-    _member_lookup: dict[ParamTraversal, ParamDesc[T]] = field(
+    _member_lookup: dict[ParamTraversal, ParamSummary[T]] = field(
         default_factory=dict, repr=False, init=False, compare=False)
 
     def __post_init__(self):
         for member in self.params:
             self._member_lookup[ParamTraversal(member.name)] = member
 
-    def traverse(self, traversal: CrossrefTraversal) -> DescBase[T]:
+    def traverse(self, traversal: CrossrefTraversal) -> SummaryBase[T]:
         if not isinstance(traversal, ParamTraversal):
             raise LookupError(
                 'Traversals for signatures must be ``ParamTraversal`` '
@@ -577,7 +574,7 @@ class SignatureDesc[T: DescMetadataProtocol](DescBase[T]):
         # KeyError is a LookupError subclass, so this is fine.
         return self._member_lookup[traversal]
 
-    def flatten(self) -> Iterator[DescBase[T]]:
+    def flatten(self) -> Iterator[SummaryBase[T]]:
         yield self
         for child in self.params:
             yield from child.flatten()
@@ -585,7 +582,7 @@ class SignatureDesc[T: DescMetadataProtocol](DescBase[T]):
 
 
 @dataclass(slots=True, frozen=True, kw_only=True)
-class ParamDesc[T: DescMetadataProtocol](DescBase[T]):
+class ParamSummary[T: SummaryMetadataProtocol](SummaryBase[T]):
     """
     """
     name: str
@@ -602,16 +599,16 @@ class ParamDesc[T: DescMetadataProtocol](DescBase[T]):
         tuple[DocText, ...],
         Note('The contents of any ``Note``s attached to the param.')]
 
-    def traverse(self, traversal: CrossrefTraversal) -> DescBase[T]:
+    def traverse(self, traversal: CrossrefTraversal) -> SummaryBase[T]:
         raise LookupError(
             'Param descriptions have no traversals', self, traversal)
 
-    def flatten(self) -> Iterator[DescBase[T]]:
+    def flatten(self) -> Iterator[SummaryBase[T]]:
         yield self
 
 
 @dataclass(slots=True, frozen=True, kw_only=True)
-class RetvalDesc[T: DescMetadataProtocol](DescBase[T]):
+class RetvalSummary[T: SummaryMetadataProtocol](SummaryBase[T]):
     """
     """
     typespec: Annotated[
@@ -624,9 +621,9 @@ class RetvalDesc[T: DescMetadataProtocol](DescBase[T]):
         tuple[DocText, ...],
         Note('The contents of any ``Note``s attached to the return value.')]
 
-    def traverse(self, traversal: CrossrefTraversal) -> DescBase[T]:
+    def traverse(self, traversal: CrossrefTraversal) -> SummaryBase[T]:
         raise LookupError(
             'Retval descriptions have no traversals', self, traversal)
 
-    def flatten(self) -> Iterator[DescBase[T]]:
+    def flatten(self) -> Iterator[SummaryBase[T]]:
         yield self

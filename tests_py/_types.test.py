@@ -8,13 +8,13 @@ import pytest
 
 from docnote_extract._crossrefs import Crossref
 from docnote_extract._crossrefs import Crossreffed
-from docnote_extract._types import CallableDesc
-from docnote_extract._types import ClassDesc
-from docnote_extract._types import CrossrefDesc
-from docnote_extract._types import DescBase
-from docnote_extract._types import ModuleDesc
+from docnote_extract._types import CallableSummary
+from docnote_extract._types import ClassSummary
+from docnote_extract._types import CrossrefSummary
+from docnote_extract._types import ModuleSummary
 from docnote_extract._types import ObjClassification
-from docnote_extract._types import VariableDesc
+from docnote_extract._types import SummaryBase
+from docnote_extract._types import VariableSummary
 
 fake_module = ModuleType('foo')
 def fake_func(): ...
@@ -41,21 +41,21 @@ class TestObjClassification:
     @pytest.mark.parametrize(
         'src_obj,expected_retval',
         [
-            (fake_reftype, CrossrefDesc),
-            (FakeClass, ClassDesc),
-            (fake_coro_gen, CallableDesc),
-            (fake_coro, CallableDesc),
-            (fake_module, ModuleDesc),
-            (fake_func, CallableDesc),
-            (fake_gen, CallableDesc),
-            (object(), VariableDesc),
-            (FakeClass.__add__, CallableDesc),
-            (FakeClass.instancemethod, CallableDesc),
-            (FakeClass.classmethod_, CallableDesc),
-            (FakeClass.staticmethod_, CallableDesc),
-            (int.__add__, CallableDesc),])
+            (fake_reftype, CrossrefSummary),
+            (FakeClass, ClassSummary),
+            (fake_coro_gen, CallableSummary),
+            (fake_coro, CallableSummary),
+            (fake_module, ModuleSummary),
+            (fake_func, CallableSummary),
+            (fake_gen, CallableSummary),
+            (object(), VariableSummary),
+            (FakeClass.__add__, CallableSummary),
+            (FakeClass.instancemethod, CallableSummary),
+            (FakeClass.classmethod_, CallableSummary),
+            (FakeClass.staticmethod_, CallableSummary),
+            (int.__add__, CallableSummary),])
     def test_get_desc_class(
-            self, src_obj, expected_retval: type[DescBase] | None):
+            self, src_obj, expected_retval: type[SummaryBase] | None):
         """get_desc_class must return the expected desc class for the
         underlying object, or None if a reftype.
         """

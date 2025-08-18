@@ -5,10 +5,10 @@ from docnote import DocnoteConfig
 
 from docnote_extract._module_tree import ConfiguredModuleTreeNode
 from docnote_extract._module_tree import SummaryTreeNode
-from docnote_extract._summarization import DescMetadata
-from docnote_extract._types import ClassDesc
-from docnote_extract._types import ModuleDesc
-from docnote_extract._types import VariableDesc
+from docnote_extract._summarization import SummaryMetadata
+from docnote_extract._types import ClassSummary
+from docnote_extract._types import ModuleSummary
+from docnote_extract._types import VariableSummary
 from docnote_extract.filtering import _conventionally_private
 from docnote_extract.filtering import _is_dunder
 from docnote_extract.filtering import filter_canonical_ownership
@@ -26,7 +26,7 @@ class TestFilterModuleSummaries:
         and that the values are set both on the module summary and on
         the summary tree node.
         """
-        target_metadata = DescMetadata()
+        target_metadata = SummaryMetadata()
         configured_root = ConfiguredModuleTreeNode(
             '_foo',
             '_foo',
@@ -36,7 +36,7 @@ class TestFilterModuleSummaries:
             '_foo',
             '_foo',
             {},
-            module_summary=ModuleDesc(
+            module_summary=ModuleSummary(
                 crossref=None,
                 ordering_index=None,
                 child_groups=(),
@@ -63,9 +63,9 @@ class TestFilterModuleSummaries:
         and that the values are set both on the module summary and on
         the summary tree node.
         """
-        foo_metadata = DescMetadata()
-        foobar_metadata = DescMetadata()
-        foobarbaz_metadata = DescMetadata()
+        foo_metadata = SummaryMetadata()
+        foobar_metadata = SummaryMetadata()
+        foobarbaz_metadata = SummaryMetadata()
         configured_root = ConfiguredModuleTreeNode(
             'foo',
             'foo',
@@ -87,7 +87,7 @@ class TestFilterModuleSummaries:
                 {'baz': SummaryTreeNode(
                     'foo.bar.baz',
                     'baz',
-                    module_summary=ModuleDesc(
+                    module_summary=ModuleSummary(
                         crossref=None,
                         ordering_index=None,
                         child_groups=(),
@@ -97,7 +97,7 @@ class TestFilterModuleSummaries:
                         dunder_all=None,
                         docstring=None,
                         members=frozenset()),)},
-                module_summary=ModuleDesc(
+                module_summary=ModuleSummary(
                     crossref=None,
                     ordering_index=None,
                     child_groups=(),
@@ -107,7 +107,7 @@ class TestFilterModuleSummaries:
                     dunder_all=None,
                     docstring=None,
                     members=frozenset()),)},
-            module_summary=ModuleDesc(
+            module_summary=ModuleSummary(
                 crossref=None,
                 ordering_index=None,
                 child_groups=(),
@@ -136,9 +136,9 @@ class TestFilterModuleSummaries:
         """Without config overrides, inclusion rules must simply follow
         python conventions.
         """
-        foo_metadata = DescMetadata()
-        foobar_metadata = DescMetadata()
-        foobarbaz_metadata = DescMetadata()
+        foo_metadata = SummaryMetadata()
+        foobar_metadata = SummaryMetadata()
+        foobarbaz_metadata = SummaryMetadata()
         configured_root = ConfiguredModuleTreeNode(
             'foo',
             'foo',
@@ -160,7 +160,7 @@ class TestFilterModuleSummaries:
                 {'_baz': SummaryTreeNode(
                     'foo.bar._baz',
                     '_baz',
-                    module_summary=ModuleDesc(
+                    module_summary=ModuleSummary(
                         crossref=None,
                         ordering_index=None,
                         child_groups=(),
@@ -170,7 +170,7 @@ class TestFilterModuleSummaries:
                         dunder_all=None,
                         docstring=None,
                         members=frozenset()),)},
-                module_summary=ModuleDesc(
+                module_summary=ModuleSummary(
                     crossref=None,
                     ordering_index=None,
                     child_groups=(),
@@ -180,7 +180,7 @@ class TestFilterModuleSummaries:
                     dunder_all=None,
                     docstring=None,
                     members=frozenset()),)},
-            module_summary=ModuleDesc(
+            module_summary=ModuleSummary(
                 crossref=None,
                 ordering_index=None,
                 child_groups=(),
@@ -201,9 +201,9 @@ class TestFilterModuleSummaries:
         """The public child of a private parent must also have its
         ``to_document`` set to False.
         """
-        foo_metadata = DescMetadata()
-        foobar_metadata = DescMetadata()
-        foobarbaz_metadata = DescMetadata()
+        foo_metadata = SummaryMetadata()
+        foobar_metadata = SummaryMetadata()
+        foobarbaz_metadata = SummaryMetadata()
         configured_root = ConfiguredModuleTreeNode(
             'foo',
             'foo',
@@ -225,7 +225,7 @@ class TestFilterModuleSummaries:
                 {'baz': SummaryTreeNode(
                     'foo._bar.baz',
                     'baz',
-                    module_summary=ModuleDesc(
+                    module_summary=ModuleSummary(
                         crossref=None,
                         ordering_index=None,
                         child_groups=(),
@@ -235,7 +235,7 @@ class TestFilterModuleSummaries:
                         dunder_all=None,
                         docstring=None,
                         members=frozenset()),)},
-                module_summary=ModuleDesc(
+                module_summary=ModuleSummary(
                     crossref=None,
                     ordering_index=None,
                     child_groups=(),
@@ -245,7 +245,7 @@ class TestFilterModuleSummaries:
                     dunder_all=None,
                     docstring=None,
                     members=frozenset()),)},
-            module_summary=ModuleDesc(
+            module_summary=ModuleSummary(
                 crossref=None,
                 ordering_index=None,
                 child_groups=(),
@@ -267,9 +267,9 @@ class TestFilterModuleSummaries:
         it must be included in the result, regardless of python
         conventions.
         """
-        foo_metadata = DescMetadata()
-        foobar_metadata = DescMetadata()
-        foobarbaz_metadata = DescMetadata()
+        foo_metadata = SummaryMetadata()
+        foobar_metadata = SummaryMetadata()
+        foobarbaz_metadata = SummaryMetadata()
         configured_root = ConfiguredModuleTreeNode(
             'foo',
             'foo',
@@ -291,7 +291,7 @@ class TestFilterModuleSummaries:
                 {'baz': SummaryTreeNode(
                     'foo._bar.baz',
                     'baz',
-                    module_summary=ModuleDesc(
+                    module_summary=ModuleSummary(
                         crossref=None,
                         ordering_index=None,
                         child_groups=(),
@@ -301,7 +301,7 @@ class TestFilterModuleSummaries:
                         dunder_all=None,
                         docstring=None,
                         members=frozenset()),)},
-                module_summary=ModuleDesc(
+                module_summary=ModuleSummary(
                     crossref=None,
                     ordering_index=None,
                     child_groups=(),
@@ -311,7 +311,7 @@ class TestFilterModuleSummaries:
                     dunder_all=None,
                     docstring=None,
                     members=frozenset()),)},
-            module_summary=ModuleDesc(
+            module_summary=ModuleSummary(
                 crossref=None,
                 ordering_index=None,
                 child_groups=(),
@@ -333,9 +333,9 @@ class TestFilterModuleSummaries:
         it must be excluded from the result, regardless of python
         conventions.
         """
-        foo_metadata = DescMetadata()
-        foobar_metadata = DescMetadata()
-        foobarbaz_metadata = DescMetadata()
+        foo_metadata = SummaryMetadata()
+        foobar_metadata = SummaryMetadata()
+        foobarbaz_metadata = SummaryMetadata()
         configured_root = ConfiguredModuleTreeNode(
             'foo',
             'foo',
@@ -357,7 +357,7 @@ class TestFilterModuleSummaries:
                 {'baz': SummaryTreeNode(
                     'foo.bar.baz',
                     'baz',
-                    module_summary=ModuleDesc(
+                    module_summary=ModuleSummary(
                         crossref=None,
                         ordering_index=None,
                         child_groups=(),
@@ -367,7 +367,7 @@ class TestFilterModuleSummaries:
                         dunder_all=None,
                         docstring=None,
                         members=frozenset()),)},
-                module_summary=ModuleDesc(
+                module_summary=ModuleSummary(
                     crossref=None,
                     ordering_index=None,
                     child_groups=(),
@@ -377,7 +377,7 @@ class TestFilterModuleSummaries:
                     dunder_all=None,
                     docstring=None,
                     members=frozenset()),)},
-            module_summary=ModuleDesc(
+            module_summary=ModuleSummary(
                 crossref=None,
                 ordering_index=None,
                 child_groups=(),
@@ -398,8 +398,8 @@ class TestFilterModuleSummaries:
         """The members within filtered module summary must not have
         their ``to_document`` value set.
         """
-        foo_metadata = DescMetadata()
-        foobar_metadata = DescMetadata()
+        foo_metadata = SummaryMetadata()
+        foobar_metadata = SummaryMetadata()
         configured_root = ConfiguredModuleTreeNode(
             '_foo',
             '_foo',
@@ -409,7 +409,7 @@ class TestFilterModuleSummaries:
             '_foo',
             '_foo',
             {},
-            module_summary=ModuleDesc(
+            module_summary=ModuleSummary(
                 crossref=None,
                 ordering_index=None,
                 child_groups=(),
@@ -418,7 +418,7 @@ class TestFilterModuleSummaries:
                 name='_foo',
                 dunder_all=None,
                 docstring=None,
-                members=frozenset({VariableDesc(
+                members=frozenset({VariableSummary(
                     name='bar',
                     typespec=None,
                     notes=(),
@@ -441,13 +441,13 @@ class TestFilterCanonicalOwnership:
         must be applied recursively to all child summaries (but not the
         module).
         """
-        foo_metadata = DescMetadata()
+        foo_metadata = SummaryMetadata()
         foo_metadata.canonical_module = 'foo'
-        foobar_metadata = DescMetadata()
+        foobar_metadata = SummaryMetadata()
         foobar_metadata.canonical_module = None
-        foobarbaz_metadata = DescMetadata()
+        foobarbaz_metadata = SummaryMetadata()
         foobarbaz_metadata.canonical_module = None
-        summary = ModuleDesc(
+        summary = ModuleSummary(
                 crossref=None,
                 ordering_index=None,
                 child_groups=(),
@@ -456,7 +456,7 @@ class TestFilterCanonicalOwnership:
                 name='foo',
                 dunder_all=None,
                 docstring=None,
-                members=frozenset({ClassDesc(
+                members=frozenset({ClassSummary(
                     name='bar',
                     metaclass=None,
                     crossref=None,
@@ -466,7 +466,7 @@ class TestFilterCanonicalOwnership:
                     docstring=None,
                     bases=(),
                     metadata=foobar_metadata,
-                    members=frozenset({VariableDesc(
+                    members=frozenset({VariableSummary(
                         name='baz',
                         typespec=None,
                         notes=(),
@@ -490,11 +490,11 @@ class TestFilterCanonicalOwnership:
         """A normalized object with no known origin must be removed
         from the result when remove_unknown_origins == True.
         """
-        foo_metadata = DescMetadata()
+        foo_metadata = SummaryMetadata()
         foo_metadata.canonical_module = 'foo'
-        foobar_metadata = DescMetadata()
+        foobar_metadata = SummaryMetadata()
         foobar_metadata.canonical_module = None
-        summary = ModuleDesc(
+        summary = ModuleSummary(
                 crossref=None,
                 ordering_index=None,
                 child_groups=(),
@@ -503,7 +503,7 @@ class TestFilterCanonicalOwnership:
                 name='foo',
                 dunder_all=None,
                 docstring=None,
-                members=frozenset({VariableDesc(
+                members=frozenset({VariableSummary(
                     name='bar',
                     typespec=None,
                     notes=(),
@@ -522,11 +522,11 @@ class TestFilterCanonicalOwnership:
         """A normalized object with a known origin matching the passed
         module must be included in the result.
         """
-        foo_metadata = DescMetadata()
+        foo_metadata = SummaryMetadata()
         foo_metadata.canonical_module = 'foo'
-        foobar_metadata = DescMetadata()
+        foobar_metadata = SummaryMetadata()
         foobar_metadata.canonical_module = 'foo'
-        summary = ModuleDesc(
+        summary = ModuleSummary(
                 crossref=None,
                 ordering_index=None,
                 child_groups=(),
@@ -535,7 +535,7 @@ class TestFilterCanonicalOwnership:
                 name='foo',
                 dunder_all=None,
                 docstring=None,
-                members=frozenset({VariableDesc(
+                members=frozenset({VariableSummary(
                     name='bar',
                     typespec=None,
                     notes=(),
@@ -554,11 +554,11 @@ class TestFilterCanonicalOwnership:
         """A normalized object with a known origin that doesn't match
         the passed module must not be included in the result.
         """
-        foo_metadata = DescMetadata()
+        foo_metadata = SummaryMetadata()
         foo_metadata.canonical_module = 'foo'
-        foobar_metadata = DescMetadata()
+        foobar_metadata = SummaryMetadata()
         foobar_metadata.canonical_module = 'oof'
-        summary = ModuleDesc(
+        summary = ModuleSummary(
                 crossref=None,
                 ordering_index=None,
                 child_groups=(),
@@ -567,7 +567,7 @@ class TestFilterCanonicalOwnership:
                 name='foo',
                 dunder_all=None,
                 docstring=None,
-                members=frozenset({VariableDesc(
+                members=frozenset({VariableSummary(
                     name='bar',
                     typespec=None,
                     notes=(),
@@ -587,11 +587,11 @@ class TestFilterCanonicalOwnership:
         the passed module must not be included in the result, even if
         it defines a config with include_in_docs=True.
         """
-        foo_metadata = DescMetadata()
+        foo_metadata = SummaryMetadata()
         foo_metadata.canonical_module = 'foo'
-        foobar_metadata = DescMetadata()
+        foobar_metadata = SummaryMetadata()
         foobar_metadata.canonical_module = 'oof'
-        summary = ModuleDesc(
+        summary = ModuleSummary(
                 crossref=None,
                 ordering_index=None,
                 child_groups=(),
@@ -600,7 +600,7 @@ class TestFilterCanonicalOwnership:
                 name='foo',
                 dunder_all=None,
                 docstring=None,
-                members=frozenset({VariableDesc(
+                members=frozenset({VariableSummary(
                     name='bar',
                     typespec=None,
                     notes=(),
@@ -623,16 +623,16 @@ class TestFilterPrivateSummaries:
         existing metadata objects, and it must be done recursively on
         everything in the module.
         """
-        foo_metadata = DescMetadata()
+        foo_metadata = SummaryMetadata()
         foo_metadata.canonical_module = 'foo'
         foo_metadata.extracted_inclusion = None
-        foobar_metadata = DescMetadata()
+        foobar_metadata = SummaryMetadata()
         foobar_metadata.canonical_module = None
         foobar_metadata.extracted_inclusion = None
-        foobarbaz_metadata = DescMetadata()
+        foobarbaz_metadata = SummaryMetadata()
         foobarbaz_metadata.canonical_module = None
         foobarbaz_metadata.extracted_inclusion = None
-        summary = ModuleDesc(
+        summary = ModuleSummary(
                 crossref=None,
                 ordering_index=None,
                 child_groups=(),
@@ -641,7 +641,7 @@ class TestFilterPrivateSummaries:
                 name='foo',
                 dunder_all=None,
                 docstring=None,
-                members=frozenset({ClassDesc(
+                members=frozenset({ClassSummary(
                     name='bar',
                     metaclass=None,
                     crossref=None,
@@ -651,7 +651,7 @@ class TestFilterPrivateSummaries:
                     docstring=None,
                     bases=(),
                     metadata=foobar_metadata,
-                    members=frozenset({VariableDesc(
+                    members=frozenset({VariableSummary(
                         name='baz',
                         typespec=None,
                         notes=(),
@@ -675,16 +675,16 @@ class TestFilterPrivateSummaries:
         """Without config overrides, inclusion rules must simply follow
         python conventions.
         """
-        foo_metadata = DescMetadata()
+        foo_metadata = SummaryMetadata()
         foo_metadata.canonical_module = 'foo'
         foo_metadata.extracted_inclusion = None
-        foobar_metadata = DescMetadata()
+        foobar_metadata = SummaryMetadata()
         foobar_metadata.canonical_module = None
         foobar_metadata.extracted_inclusion = None
-        foorab_metadata = DescMetadata()
+        foorab_metadata = SummaryMetadata()
         foorab_metadata.canonical_module = None
         foorab_metadata.extracted_inclusion = None
-        summary = ModuleDesc(
+        summary = ModuleSummary(
                 crossref=None,
                 ordering_index=None,
                 child_groups=(),
@@ -694,7 +694,7 @@ class TestFilterPrivateSummaries:
                 dunder_all=None,
                 docstring=None,
                 members=frozenset({
-                    VariableDesc(
+                    VariableSummary(
                         name='bar',
                         typespec=None,
                         notes=(),
@@ -703,7 +703,7 @@ class TestFilterPrivateSummaries:
                         child_groups=(),
                         parent_group_name=None,
                         metadata=foobar_metadata),
-                    VariableDesc(
+                    VariableSummary(
                         name='_rab',
                         typespec=None,
                         notes=(),
@@ -723,16 +723,16 @@ class TestFilterPrivateSummaries:
         it must be included in the result, regardless of python
         conventions.
         """
-        foo_metadata = DescMetadata()
+        foo_metadata = SummaryMetadata()
         foo_metadata.canonical_module = 'foo'
         foo_metadata.extracted_inclusion = None
-        foobar_metadata = DescMetadata()
+        foobar_metadata = SummaryMetadata()
         foobar_metadata.canonical_module = None
         foobar_metadata.extracted_inclusion = None
-        foorab_metadata = DescMetadata()
+        foorab_metadata = SummaryMetadata()
         foorab_metadata.canonical_module = None
         foorab_metadata.extracted_inclusion = True
-        summary = ModuleDesc(
+        summary = ModuleSummary(
                 crossref=None,
                 ordering_index=None,
                 child_groups=(),
@@ -742,7 +742,7 @@ class TestFilterPrivateSummaries:
                 dunder_all=None,
                 docstring=None,
                 members=frozenset({
-                    VariableDesc(
+                    VariableSummary(
                         name='bar',
                         typespec=None,
                         notes=(),
@@ -751,7 +751,7 @@ class TestFilterPrivateSummaries:
                         child_groups=(),
                         parent_group_name=None,
                         metadata=foobar_metadata),
-                    VariableDesc(
+                    VariableSummary(
                         name='_rab',
                         typespec=None,
                         notes=(),
@@ -771,16 +771,16 @@ class TestFilterPrivateSummaries:
         it must be excluded from the result, regardless of python
         conventions.
         """
-        foo_metadata = DescMetadata()
+        foo_metadata = SummaryMetadata()
         foo_metadata.canonical_module = 'foo'
         foo_metadata.extracted_inclusion = None
-        foobar_metadata = DescMetadata()
+        foobar_metadata = SummaryMetadata()
         foobar_metadata.canonical_module = None
         foobar_metadata.extracted_inclusion = False
-        foorab_metadata = DescMetadata()
+        foorab_metadata = SummaryMetadata()
         foorab_metadata.canonical_module = None
         foorab_metadata.extracted_inclusion = None
-        summary = ModuleDesc(
+        summary = ModuleSummary(
                 crossref=None,
                 ordering_index=None,
                 child_groups=(),
@@ -790,7 +790,7 @@ class TestFilterPrivateSummaries:
                 dunder_all=None,
                 docstring=None,
                 members=frozenset({
-                    VariableDesc(
+                    VariableSummary(
                         name='bar',
                         typespec=None,
                         notes=(),
@@ -799,7 +799,7 @@ class TestFilterPrivateSummaries:
                         child_groups=(),
                         parent_group_name=None,
                         metadata=foobar_metadata),
-                    VariableDesc(
+                    VariableSummary(
                         name='_rab',
                         typespec=None,
                         notes=(),
@@ -818,16 +818,16 @@ class TestFilterPrivateSummaries:
         """Absent any config overrides, dunders with a known module
         outside of the stdlib must be included in the result.
         """
-        foo_metadata = DescMetadata()
+        foo_metadata = SummaryMetadata()
         foo_metadata.canonical_module = 'foo'
         foo_metadata.extracted_inclusion = None
-        foobar_metadata = DescMetadata()
+        foobar_metadata = SummaryMetadata()
         foobar_metadata.canonical_module = 'foo'
         foobar_metadata.extracted_inclusion = None
-        fooadd_metadata = DescMetadata()
+        fooadd_metadata = SummaryMetadata()
         fooadd_metadata.canonical_module = 'foo'
         fooadd_metadata.extracted_inclusion = None
-        summary = ModuleDesc(
+        summary = ModuleSummary(
                 crossref=None,
                 ordering_index=None,
                 child_groups=(),
@@ -843,7 +843,7 @@ class TestFilterPrivateSummaries:
                     # module in the metadata. I mean, it also doesn't make
                     # sense to have an __add__ within a module. Again, doesn't
                     # matter!
-                    VariableDesc(
+                    VariableSummary(
                         name='__add__',
                         typespec=None,
                         notes=(),
@@ -852,7 +852,7 @@ class TestFilterPrivateSummaries:
                         child_groups=(),
                         parent_group_name=None,
                         metadata=fooadd_metadata),
-                    VariableDesc(
+                    VariableSummary(
                         name='__bar__',
                         typespec=None,
                         notes=(),
@@ -872,19 +872,19 @@ class TestFilterPrivateSummaries:
         or with a module source from within the stdlib, must be excluded
         from the result.
         """
-        foo_metadata = DescMetadata()
+        foo_metadata = SummaryMetadata()
         foo_metadata.canonical_module = 'foo'
         foo_metadata.extracted_inclusion = None
-        foobar_metadata = DescMetadata()
+        foobar_metadata = SummaryMetadata()
         foobar_metadata.canonical_module = None
         foobar_metadata.extracted_inclusion = None
-        foodir_metadata = DescMetadata()
+        foodir_metadata = SummaryMetadata()
         foodir_metadata.canonical_module = 'typing'
         foodir_metadata.extracted_inclusion = None
-        fooinit_metadata = DescMetadata()
+        fooinit_metadata = SummaryMetadata()
         fooinit_metadata.canonical_module = None
         fooinit_metadata.extracted_inclusion = None
-        summary = ModuleDesc(
+        summary = ModuleSummary(
                 crossref=None,
                 ordering_index=None,
                 child_groups=(),
@@ -900,7 +900,7 @@ class TestFilterPrivateSummaries:
                     # module in the metadata. I mean, it also doesn't make
                     # sense to have an __add__ within a module. Again, doesn't
                     # matter!
-                    VariableDesc(
+                    VariableSummary(
                         name='__dir__',
                         typespec=None,
                         notes=(),
@@ -909,7 +909,7 @@ class TestFilterPrivateSummaries:
                         child_groups=(),
                         parent_group_name=None,
                         metadata=foodir_metadata),
-                    VariableDesc(
+                    VariableSummary(
                         name='__bar__',
                         typespec=None,
                         notes=(),
@@ -918,7 +918,7 @@ class TestFilterPrivateSummaries:
                         child_groups=(),
                         parent_group_name=None,
                         metadata=foobar_metadata),
-                    VariableDesc(
+                    VariableSummary(
                         name='__init__',
                         typespec=None,
                         notes=(),
