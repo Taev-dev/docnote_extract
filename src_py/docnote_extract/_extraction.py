@@ -457,7 +457,7 @@ class _ExtractionFinderLoader(Loader):
 
         name_tree = ModuleTreeNode.from_discovery(firstparty_names)
         for name_tree_root in name_tree.values():
-            for name_node in name_tree_root.linearize():
+            for name_node in name_tree_root.flatten():
                 module_name = name_node.fullname
                 nostub_module = self.module_stash_nostub_raw[module_name]
 

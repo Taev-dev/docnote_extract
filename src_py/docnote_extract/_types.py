@@ -313,10 +313,12 @@ class _DescBaseProtocol[T: DescMetadataProtocol](Protocol):
         """
         ...
 
-    def linearize(self) -> Iterator[DescBase[T]]:
+    def flatten(self) -> Iterator[DescBase[T]]:
         """Yield all of the nodes at the description, recursively,
         in a depth-first fashion. Primarily intended for updating
         metadata values based on filters.
+
+        Order of the branches is arbitrary.
         """
         ...
 
@@ -363,10 +365,10 @@ class ModuleDesc[T: DescMetadataProtocol](DescBase[T]):
         # KeyError is a LookupError subclass, so this is fine.
         return self._member_lookup[traversal]
 
-    def linearize(self) -> Iterator[DescBase[T]]:
+    def flatten(self) -> Iterator[DescBase[T]]:
         yield self
         for child in self.members:
-            yield from child.linearize()
+            yield from child.flatten()
 
     def in_dunder_all(self, name: str) -> bool:
         """Returns True if the module has a dunder all declared **and**
@@ -399,7 +401,7 @@ class CrossrefDesc[T: DescMetadataProtocol](DescBase[T]):
         raise LookupError(
             'Crossref descriptions have no traversals', self, traversal)
 
-    def linearize(self) -> Iterator[DescBase[T]]:
+    def flatten(self) -> Iterator[DescBase[T]]:
         yield self
 
 
@@ -427,7 +429,7 @@ class VariableDesc[T: DescMetadataProtocol](DescBase[T]):
         raise LookupError(
             'Variable descriptions have no traversals', self, traversal)
 
-    def linearize(self) -> Iterator[DescBase[T]]:
+    def flatten(self) -> Iterator[DescBase[T]]:
         yield self
 
 
@@ -462,10 +464,10 @@ class ClassDesc[T: DescMetadataProtocol](DescBase[T]):
         # KeyError is a LookupError subclass, so this is fine.
         return self._member_lookup[traversal]
 
-    def linearize(self) -> Iterator[DescBase[T]]:
+    def flatten(self) -> Iterator[DescBase[T]]:
         yield self
         for child in self.members:
-            yield from child.linearize()
+            yield from child.flatten()
 
 
 @dataclass(slots=True, frozen=True, kw_only=True)
@@ -531,10 +533,10 @@ class CallableDesc[T: DescMetadataProtocol](DescBase[T]):
 
         return self._member_lookup[traversal]
 
-    def linearize(self) -> Iterator[DescBase[T]]:
+    def flatten(self) -> Iterator[DescBase[T]]:
         yield self
         for child in self.signatures:
-            yield from child.linearize()
+            yield from child.flatten()
 
 
 @dataclass(slots=True, frozen=True, kw_only=True)
@@ -575,10 +577,10 @@ class SignatureDesc[T: DescMetadataProtocol](DescBase[T]):
         # KeyError is a LookupError subclass, so this is fine.
         return self._member_lookup[traversal]
 
-    def linearize(self) -> Iterator[DescBase[T]]:
+    def flatten(self) -> Iterator[DescBase[T]]:
         yield self
         for child in self.params:
-            yield from child.linearize()
+            yield from child.flatten()
         yield self.retval
 
 
@@ -604,7 +606,7 @@ class ParamDesc[T: DescMetadataProtocol](DescBase[T]):
         raise LookupError(
             'Param descriptions have no traversals', self, traversal)
 
-    def linearize(self) -> Iterator[DescBase[T]]:
+    def flatten(self) -> Iterator[DescBase[T]]:
         yield self
 
 
@@ -626,5 +628,5 @@ class RetvalDesc[T: DescMetadataProtocol](DescBase[T]):
         raise LookupError(
             'Retval descriptions have no traversals', self, traversal)
 
-    def linearize(self) -> Iterator[DescBase[T]]:
+    def flatten(self) -> Iterator[DescBase[T]]:
         yield self

@@ -104,7 +104,7 @@ class TestModuleTreeNode:
         retval: set[str] = set()
         root_nodes = ConfiguredModuleTreeNode.from_extraction(fake_extraction)
         for root_node in root_nodes.values():
-            for node in root_node.linearize():
+            for node in root_node.flatten():
                 retval.add(node.fullname)
 
         assert retval == set(fake_extraction)

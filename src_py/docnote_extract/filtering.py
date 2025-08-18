@@ -120,7 +120,7 @@ def _set_canonical_ownership(
         ) -> None:
     module_member = module_summary / GetattrTraversal(toplevel_name)
 
-    for desc in module_member.linearize():
+    for desc in module_member.flatten():
         desc.metadata.disowned = disowned
 
 
@@ -135,7 +135,7 @@ def filter_private_summaries(module_summary: ModuleDesc) -> None:
     Note that the module summary itself is skipped, as it gets set
     during ``filter_module_summaries``.
     """
-    for summary in module_summary.linearize():
+    for summary in module_summary.flatten():
         # We don't want this to be contingent upon the ordering of the
         # flattened summaries, and this isn't super performance sensitive,
         # and ``is`` is very fast. Therefore, just do this every iteration.

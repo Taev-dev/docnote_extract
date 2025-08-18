@@ -70,13 +70,13 @@ class ModuleTreeNode:
 
         return type(self)(**params)
 
-    def linearize(self) -> Iterator[Self]:
+    def flatten(self) -> Iterator[Self]:
         """Yields all of the nodes in the tree in a depth-first
-        fashion.
+        fashion. Note that the ordering of branches is arbitrary.
         """
         yield self
         for child in self.children.values():
-            yield from child.linearize()
+            yield from child.flatten()
 
     @classmethod
     def from_discovery(
