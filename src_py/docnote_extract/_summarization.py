@@ -6,7 +6,6 @@ import logging
 from collections.abc import Callable
 from collections.abc import Iterable
 from dataclasses import dataclass
-from dataclasses import field
 from typing import Annotated
 from typing import Any
 from typing import Protocol
@@ -91,13 +90,15 @@ class _DescFactoryProtocol[T: DescBase](Protocol):
         ...
 
 
-@dataclass(slots=True)
+@dataclass(slots=True, init=False)
 class DescMetadata(DescMetadataProtocol):
     """The default implementation for summary description metadata.
     """
-    include_in_docs_as_configured: bool | None = field(init=False)
-    include_in_docs_final: bool = field(init=False)
-    crossref_namespace: dict[str, Crossref] = field(init=False)
+    extracted_inclusion: bool | None
+    canonical_module: str | None
+    to_document: bool
+    disowned: bool
+    crossref_namespace: dict[str, Crossref]
 
     @classmethod
     def factory(
@@ -180,8 +181,14 @@ def summarize_module[T: DescMetadataProtocol](
         crossref=module_crossref,
         annotateds=(),
         metadata=config.metadata or {})
-    metadata.include_in_docs_as_configured = config.include_in_docs
+    metadata.extracted_inclusion = config.include_in_docs
     metadata.crossref_namespace = namespace
+    metadata.canonical_module = module.__name__
+
+    if (raw_dunder_all := getattr(module, '__all__', None)) is not None:
+        dunder_all = frozenset(raw_dunder_all)
+    else:
+        dunder_all = None
 
     desc = ModuleDesc(
         crossref=module_crossref,
@@ -190,7 +197,7 @@ def summarize_module[T: DescMetadataProtocol](
         parent_group_name=None,
         child_groups=config.child_groups or (),
         metadata=metadata,
-        dunder_all=frozenset(getattr(module, '__all__', ())),
+        dunder_all=dunder_all,
         docstring=extract_docstring(module, config),
         members=frozenset(module_members))
     return desc
@@ -229,6 +236,9 @@ def create_crossref_desc(
     metadata.include_in_docs_as_configured = \
         obj.effective_config.include_in_docs
     metadata.crossref_namespace = parent_crossref_namespace
+    metadata.canonical_module = (
+        obj.canonical_module if obj.canonical_module is not Singleton.UNKNOWN
+        else None)
 
     return CrossrefDesc(
         name=name_in_parent,
@@ -280,6 +290,9 @@ def create_variable_desc(
     metadata.include_in_docs_as_configured = \
         obj.effective_config.include_in_docs
     metadata.crossref_namespace = parent_crossref_namespace
+    metadata.canonical_module = (
+        obj.canonical_module if obj.canonical_module is not Singleton.UNKNOWN
+        else None)
 
     # If missing, use the runtime type as an inference -- unless the
     # object was a bare annotation (without a typespec?! weird), then
@@ -384,6 +397,9 @@ def create_class_desc(
     metadata.include_in_docs_as_configured = \
         obj.effective_config.include_in_docs
     metadata.crossref_namespace = namespace
+    metadata.canonical_module = (
+        obj.canonical_module if obj.canonical_module is not Singleton.UNKNOWN
+        else None)
 
     return ClassDesc(
         # Note: might differ from src_obj.__name__
@@ -415,6 +431,10 @@ def create_callable_desc(
     """
     crossref = parent_crossref_namespace[name_in_parent]
     src_obj = obj.obj_or_stub
+    canonical_module = (
+        obj.canonical_module
+        if obj.canonical_module is not Singleton.UNKNOWN
+        else None)
     # This MUST happen before unwrapping staticmethods and classmethods,
     # otherwise we end up back at the original function
     method_type = MethodType.classify(src_obj, in_class)
@@ -479,6 +499,7 @@ def create_callable_desc(
             signature = _make_signature(
                 parent_crossref_namespace,
                 overload_,
+                canonical_module,
                 signature_crossref,
                 signature_config=overload_config,
                 parent_effective_config=obj.effective_config,
@@ -489,11 +510,15 @@ def create_callable_desc(
             else:
                 signatures.append(signature)
 
+    # ``else`` is correct! If it defines overloads, then we want to rely ONLY
+    # upon the overloads for the signature, and treat the implementation as
+    # irrelevant for documentation purposes.
     else:
         signature_crossref = crossref / SignatureTraversal(None)
         signature = _make_signature(
             parent_crossref_namespace,
             src_obj,
+            canonical_module,
             signature_crossref,
             signature_config=implementation_config,
             parent_effective_config=obj.effective_config,
@@ -516,6 +541,7 @@ def create_callable_desc(
         obj.effective_config.include_in_docs
     metadata.crossref_namespace = {
         **parent_crossref_namespace, **namespace_expansion}
+    metadata.canonical_module = canonical_module
 
     return CallableDesc(
         # Note: might differ from src_obj.__name__
@@ -534,9 +560,10 @@ def create_callable_desc(
         signatures=frozenset(signatures))
 
 
-def _make_signature(
+def _make_signature(  # noqa: PLR0913
         parent_crossref_namespace: dict[str, Crossref],
         src_obj: Callable,
+        canonical_module: str | None,
         signature_crossref: Crossref | None,
         signature_config: DocnoteConfig,
         parent_effective_config: DocnoteConfig,
@@ -616,6 +643,7 @@ def _make_signature(
         param_metadata.include_in_docs_as_configured = \
             effective_config.include_in_docs
         param_metadata.crossref_namespace = signature_namespace
+        param_metadata.canonical_module = canonical_module
 
         params.append(ParamDesc(
             name=param_name,
@@ -652,6 +680,7 @@ def _make_signature(
     retval_metadata.include_in_docs_as_configured = \
         retval_effective_config.include_in_docs
     retval_metadata.crossref_namespace = signature_namespace
+    retval_metadata.canonical_module = canonical_module
 
     signature_metadata = desc_metadata_factory(
         classification=None,
@@ -662,6 +691,7 @@ def _make_signature(
     signature_metadata.include_in_docs_as_configured = \
         signature_config.include_in_docs
     signature_metadata.crossref_namespace = signature_namespace
+    signature_metadata.canonical_module = canonical_module
     return SignatureDesc(
         params=frozenset(params),
         retval=RetvalDesc(

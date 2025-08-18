@@ -5,81 +5,214 @@ from collections.abc import Callable
 import pytest
 from docnote import DocnoteConfig
 
-from docnote_extract._extraction import ModulePostExtraction
 from docnote_extract._module_tree import ConfiguredModuleTreeNode
+from docnote_extract._module_tree import SummaryTreeNode
+from docnote_extract._summarization import DescMetadata
+from docnote_extract._types import ClassDesc
+from docnote_extract._types import ModuleDesc
 from docnote_extract._types import Singleton
+from docnote_extract._types import VariableDesc
 from docnote_extract.filtering import _conventionally_private
 from docnote_extract.filtering import _is_dunder
-from docnote_extract.filtering import filter_inclusion_rules
-from docnote_extract.filtering import filter_module_members
-from docnote_extract.filtering import filter_modules
+from docnote_extract.filtering import filter_canonical_ownership
+from docnote_extract.filtering import filter_module_summaries
+from docnote_extract.filtering import filter_private_summaries
 from docnote_extract.normalization import NormalizedObj
 from docnote_extract.normalization import TypeSpec
 
 
-class TestFilterModules:
+class TestFilterModuleSummaries:
 
     def test_root_filtered(self):
-        """When the root node is supposed to be filtered out, the return
-        value must be None.
+        """When the root node is supposed to be filtered out, its
+        metadata must be assigned accordingly.
+
+        This also ensures that the modification must happen in-place,
+        and that the values are set both on the module summary and on
+        the summary tree node.
         """
-        root = ConfiguredModuleTreeNode(
+        target_metadata = DescMetadata()
+        configured_root = ConfiguredModuleTreeNode(
             '_foo',
             '_foo',
             {},
             effective_config=DocnoteConfig(),)
+        summary_root = SummaryTreeNode(
+            '_foo',
+            '_foo',
+            {},
+            module_summary=ModuleDesc(
+                crossref=None,
+                ordering_index=None,
+                child_groups=(),
+                parent_group_name=None,
+                metadata=target_metadata,
+                name='_foo',
+                dunder_all=None,
+                docstring=None,
+                members=frozenset()))
 
-        retval = filter_modules(root)
+        assert not hasattr(target_metadata, 'to_document')
+        assert summary_root.to_document is None
+        retval = filter_module_summaries(summary_root, configured_root)
 
         assert retval is None
+        assert target_metadata.to_document is False
+        assert summary_root.to_document is False
 
-    def test_not_inplace(self):
-        """When not filtered out, the return value must be a new object,
-        and not an inplace modification of the passed root node.
+    def test_inferred_with_nesting(self):
+        """Without any overrides, inferred inclusion should be done
+        recursively across all modules.
+
+        This also ensures that the modification must happen in-place,
+        and that the values are set both on the module summary and on
+        the summary tree node.
         """
-        root = ConfiguredModuleTreeNode(
-            'foo',
-            'foo',
-            {},
-            effective_config=DocnoteConfig())
-
-        retval = filter_modules(root)
-
-        assert retval is not None
-        assert retval is not root
-        assert isinstance(retval, ConfiguredModuleTreeNode)
-
-    def test_without_configs(self):
-        """Without config overrides, inclusion rules must simply follow
-        python conventions.
-        """
-        root = ConfiguredModuleTreeNode(
+        foo_metadata = DescMetadata()
+        foobar_metadata = DescMetadata()
+        foobarbaz_metadata = DescMetadata()
+        configured_root = ConfiguredModuleTreeNode(
             'foo',
             'foo',
             {'bar': ConfiguredModuleTreeNode(
                 'foo.bar',
                 'bar',
                 {'baz': ConfiguredModuleTreeNode(
+                    'foo.bar.baz',
+                    'baz',
+                    effective_config=DocnoteConfig(),)},
+                effective_config=DocnoteConfig(),)},
+            effective_config=DocnoteConfig(),)
+        summary_root = SummaryTreeNode(
+            'foo',
+            'foo',
+            {'bar': SummaryTreeNode(
+                'foo.bar',
+                'bar',
+                {'baz': SummaryTreeNode(
+                    'foo.bar.baz',
+                    'baz',
+                    module_summary=ModuleDesc(
+                        crossref=None,
+                        ordering_index=None,
+                        child_groups=(),
+                        parent_group_name=None,
+                        metadata=foobarbaz_metadata,
+                        name='foo.bar.baz',
+                        dunder_all=None,
+                        docstring=None,
+                        members=frozenset()),)},
+                module_summary=ModuleDesc(
+                    crossref=None,
+                    ordering_index=None,
+                    child_groups=(),
+                    parent_group_name=None,
+                    metadata=foobar_metadata,
+                    name='foo.bar',
+                    dunder_all=None,
+                    docstring=None,
+                    members=frozenset()),)},
+            module_summary=ModuleDesc(
+                crossref=None,
+                ordering_index=None,
+                child_groups=(),
+                parent_group_name=None,
+                metadata=foo_metadata,
+                name='foo',
+                dunder_all=None,
+                docstring=None,
+                members=frozenset()))
+
+        assert summary_root.to_document is None
+        assert not hasattr(foo_metadata, 'to_document')
+        assert not hasattr(foobar_metadata, 'to_document')
+        assert not hasattr(foobarbaz_metadata, 'to_document')
+        retval = filter_module_summaries(summary_root, configured_root)
+
+        assert retval is None
+        assert foo_metadata.to_document is True
+        assert summary_root.to_document is True
+        assert foobar_metadata.to_document is True
+        assert (summary_root / 'bar').to_document is True
+        assert foobarbaz_metadata.to_document is True
+        assert (summary_root / 'bar' / 'baz').to_document is True
+
+    def test_without_configs(self):
+        """Without config overrides, inclusion rules must simply follow
+        python conventions.
+        """
+        foo_metadata = DescMetadata()
+        foobar_metadata = DescMetadata()
+        foobarbaz_metadata = DescMetadata()
+        configured_root = ConfiguredModuleTreeNode(
+            'foo',
+            'foo',
+            {'bar': ConfiguredModuleTreeNode(
+                'foo.bar',
+                'bar',
+                {'_baz': ConfiguredModuleTreeNode(
                     'foo.bar._baz',
                     '_baz',
                     effective_config=DocnoteConfig(),)},
                 effective_config=DocnoteConfig(),)},
             effective_config=DocnoteConfig(),)
+        summary_root = SummaryTreeNode(
+            'foo',
+            'foo',
+            {'bar': SummaryTreeNode(
+                'foo.bar',
+                'bar',
+                {'_baz': SummaryTreeNode(
+                    'foo.bar._baz',
+                    '_baz',
+                    module_summary=ModuleDesc(
+                        crossref=None,
+                        ordering_index=None,
+                        child_groups=(),
+                        parent_group_name=None,
+                        metadata=foobarbaz_metadata,
+                        name='foo.bar._baz',
+                        dunder_all=None,
+                        docstring=None,
+                        members=frozenset()),)},
+                module_summary=ModuleDesc(
+                    crossref=None,
+                    ordering_index=None,
+                    child_groups=(),
+                    parent_group_name=None,
+                    metadata=foobar_metadata,
+                    name='foo.bar',
+                    dunder_all=None,
+                    docstring=None,
+                    members=frozenset()),)},
+            module_summary=ModuleDesc(
+                crossref=None,
+                ordering_index=None,
+                child_groups=(),
+                parent_group_name=None,
+                metadata=foo_metadata,
+                name='foo',
+                dunder_all=None,
+                docstring=None,
+                members=frozenset()))
 
-        retval = filter_modules(root)
+        filter_module_summaries(summary_root, configured_root)
 
-        assert retval is not None
-        assert isinstance(retval / 'bar', ConfiguredModuleTreeNode)
-        assert not (retval / 'bar').children
+        assert foo_metadata.to_document is True
+        assert foobar_metadata.to_document is True
+        assert foobarbaz_metadata.to_document is False
 
     def test_silenced_child(self):
-        """The public child of a private parent must not be included in
-        the result.
+        """The public child of a private parent must also have its
+        ``to_document`` set to False.
         """
-        root = ConfiguredModuleTreeNode(
+        foo_metadata = DescMetadata()
+        foobar_metadata = DescMetadata()
+        foobarbaz_metadata = DescMetadata()
+        configured_root = ConfiguredModuleTreeNode(
             'foo',
             'foo',
-            {'bar': ConfiguredModuleTreeNode(
+            {'_bar': ConfiguredModuleTreeNode(
                 'foo._bar',
                 '_bar',
                 {'baz': ConfiguredModuleTreeNode(
@@ -88,18 +221,61 @@ class TestFilterModules:
                     effective_config=DocnoteConfig(),)},
                 effective_config=DocnoteConfig(),)},
             effective_config=DocnoteConfig(),)
+        summary_root = SummaryTreeNode(
+            'foo',
+            'foo',
+            {'_bar': SummaryTreeNode(
+                'foo._bar',
+                '_bar',
+                {'baz': SummaryTreeNode(
+                    'foo._bar.baz',
+                    'baz',
+                    module_summary=ModuleDesc(
+                        crossref=None,
+                        ordering_index=None,
+                        child_groups=(),
+                        parent_group_name=None,
+                        metadata=foobarbaz_metadata,
+                        name='foo._bar.baz',
+                        dunder_all=None,
+                        docstring=None,
+                        members=frozenset()),)},
+                module_summary=ModuleDesc(
+                    crossref=None,
+                    ordering_index=None,
+                    child_groups=(),
+                    parent_group_name=None,
+                    metadata=foobar_metadata,
+                    name='foo._bar',
+                    dunder_all=None,
+                    docstring=None,
+                    members=frozenset()),)},
+            module_summary=ModuleDesc(
+                crossref=None,
+                ordering_index=None,
+                child_groups=(),
+                parent_group_name=None,
+                metadata=foo_metadata,
+                name='foo',
+                dunder_all=None,
+                docstring=None,
+                members=frozenset()))
 
-        retval = filter_modules(root)
+        filter_module_summaries(summary_root, configured_root)
 
-        assert retval is not None
-        assert not retval.children
+        assert foo_metadata.to_document is True
+        assert foobar_metadata.to_document is False
+        assert foobarbaz_metadata.to_document is False
 
     def test_override_force_include(self):
         """When an attached config is marked include_in_docs=True, it
         it must be included in the result, regardless of python
         conventions.
         """
-        root = ConfiguredModuleTreeNode(
+        foo_metadata = DescMetadata()
+        foobar_metadata = DescMetadata()
+        foobarbaz_metadata = DescMetadata()
+        configured_root = ConfiguredModuleTreeNode(
             'foo',
             'foo',
             {'_bar': ConfiguredModuleTreeNode(
@@ -111,20 +287,61 @@ class TestFilterModules:
                     effective_config=DocnoteConfig(),)},
                 effective_config=DocnoteConfig(include_in_docs=True),)},
             effective_config=DocnoteConfig(),)
+        summary_root = SummaryTreeNode(
+            'foo',
+            'foo',
+            {'_bar': SummaryTreeNode(
+                'foo._bar',
+                '_bar',
+                {'baz': SummaryTreeNode(
+                    'foo._bar.baz',
+                    'baz',
+                    module_summary=ModuleDesc(
+                        crossref=None,
+                        ordering_index=None,
+                        child_groups=(),
+                        parent_group_name=None,
+                        metadata=foobarbaz_metadata,
+                        name='foo._bar.baz',
+                        dunder_all=None,
+                        docstring=None,
+                        members=frozenset()),)},
+                module_summary=ModuleDesc(
+                    crossref=None,
+                    ordering_index=None,
+                    child_groups=(),
+                    parent_group_name=None,
+                    metadata=foobar_metadata,
+                    name='foo._bar',
+                    dunder_all=None,
+                    docstring=None,
+                    members=frozenset()),)},
+            module_summary=ModuleDesc(
+                crossref=None,
+                ordering_index=None,
+                child_groups=(),
+                parent_group_name=None,
+                metadata=foo_metadata,
+                name='foo',
+                dunder_all=None,
+                docstring=None,
+                members=frozenset()))
 
-        retval = filter_modules(root)
+        filter_module_summaries(summary_root, configured_root)
 
-        assert retval is not None
-        assert retval.children
-        assert isinstance(retval / '_bar', ConfiguredModuleTreeNode)
-        assert (retval / '_bar').children
+        assert foo_metadata.to_document is True
+        assert foobar_metadata.to_document is True
+        assert foobarbaz_metadata.to_document is True
 
     def test_override_force_exclude(self):
         """When an attached config is marked include_in_docs=False, it
         it must be excluded from the result, regardless of python
         conventions.
         """
-        root = ConfiguredModuleTreeNode(
+        foo_metadata = DescMetadata()
+        foobar_metadata = DescMetadata()
+        foobarbaz_metadata = DescMetadata()
+        configured_root = ConfiguredModuleTreeNode(
             'foo',
             'foo',
             {'bar': ConfiguredModuleTreeNode(
@@ -136,291 +353,591 @@ class TestFilterModules:
                     effective_config=DocnoteConfig(),)},
                 effective_config=DocnoteConfig(include_in_docs=False),)},
             effective_config=DocnoteConfig(),)
+        summary_root = SummaryTreeNode(
+            'foo',
+            'foo',
+            {'bar': SummaryTreeNode(
+                'foo.bar',
+                'bar',
+                {'baz': SummaryTreeNode(
+                    'foo.bar.baz',
+                    'baz',
+                    module_summary=ModuleDesc(
+                        crossref=None,
+                        ordering_index=None,
+                        child_groups=(),
+                        parent_group_name=None,
+                        metadata=foobarbaz_metadata,
+                        name='foo.bar.baz',
+                        dunder_all=None,
+                        docstring=None,
+                        members=frozenset()),)},
+                module_summary=ModuleDesc(
+                    crossref=None,
+                    ordering_index=None,
+                    child_groups=(),
+                    parent_group_name=None,
+                    metadata=foobar_metadata,
+                    name='foo.bar',
+                    dunder_all=None,
+                    docstring=None,
+                    members=frozenset()),)},
+            module_summary=ModuleDesc(
+                crossref=None,
+                ordering_index=None,
+                child_groups=(),
+                parent_group_name=None,
+                metadata=foo_metadata,
+                name='foo',
+                dunder_all=None,
+                docstring=None,
+                members=frozenset()))
 
-        retval = filter_modules(root)
+        filter_module_summaries(summary_root, configured_root)
 
-        assert retval is not None
-        assert not retval.children
+        assert foo_metadata.to_document is True
+        assert foobar_metadata.to_document is False
+        assert foobarbaz_metadata.to_document is False
 
-
-class TestFilterModuleMembers:
-
-    def test_not_inplace(self):
-        """The returned result must be a new object, not an inplace
-        mutation of the passed normalized objects.
+    def test_module_members_unaffected(self):
+        """The members within filtered module summary must not have
+        their ``to_document`` value set.
         """
-        module = ModulePostExtraction('foo')
-        normalized_objs = {
-            'bar': NormalizedObj(
-                4,
-                (),
-                DocnoteConfig(),
-                (),
-                TypeSpec.from_typehint(int),
-                canonical_module=Singleton.UNKNOWN,
-                canonical_name=Singleton.UNKNOWN)}
+        foo_metadata = DescMetadata()
+        foobar_metadata = DescMetadata()
+        configured_root = ConfiguredModuleTreeNode(
+            '_foo',
+            '_foo',
+            {},
+            effective_config=DocnoteConfig(),)
+        summary_root = SummaryTreeNode(
+            '_foo',
+            '_foo',
+            {},
+            module_summary=ModuleDesc(
+                crossref=None,
+                ordering_index=None,
+                child_groups=(),
+                parent_group_name=None,
+                metadata=foo_metadata,
+                name='_foo',
+                dunder_all=None,
+                docstring=None,
+                members=frozenset({VariableDesc(
+                    name='bar',
+                    typespec=None,
+                    notes=(),
+                    crossref=None,
+                    ordering_index=None,
+                    child_groups=(),
+                    parent_group_name=None,
+                    metadata=foobar_metadata)})))
 
-        retval = filter_module_members(module, normalized_objs)
+        filter_module_summaries(summary_root, configured_root)
 
-        assert retval is not normalized_objs
+        assert not hasattr(foobar_metadata, 'to_document')
+
+
+class TestFilterCanonicalOwnership:
+
+    def test_inplace_and_recursive(self):
+        """Filtering must be done in-place by assigning the ``disown``
+        attribute, and the filter method must return None. The value
+        must be applied recursively to all child summaries (but not the
+        module).
+        """
+        foo_metadata = DescMetadata()
+        foo_metadata.canonical_module = 'foo'
+        foobar_metadata = DescMetadata()
+        foobar_metadata.canonical_module = None
+        foobarbaz_metadata = DescMetadata()
+        foobarbaz_metadata.canonical_module = None
+        summary = ModuleDesc(
+                crossref=None,
+                ordering_index=None,
+                child_groups=(),
+                parent_group_name=None,
+                metadata=foo_metadata,
+                name='foo',
+                dunder_all=None,
+                docstring=None,
+                members=frozenset({ClassDesc(
+                    name='bar',
+                    metaclass=None,
+                    crossref=None,
+                    ordering_index=None,
+                    child_groups=(),
+                    parent_group_name=None,
+                    docstring=None,
+                    bases=(),
+                    metadata=foobar_metadata,
+                    members=frozenset({VariableDesc(
+                        name='baz',
+                        typespec=None,
+                        notes=(),
+                        crossref=None,
+                        ordering_index=None,
+                        child_groups=(),
+                        parent_group_name=None,
+                        metadata=foobarbaz_metadata)}))}))
+
+        assert not hasattr(foo_metadata, 'disowned')
+        assert not hasattr(foobar_metadata, 'disowned')
+        assert not hasattr(foobarbaz_metadata, 'disowned')
+        retval = filter_canonical_ownership(summary)
+
+        assert retval is None
+        assert foo_metadata.disowned is False
+        assert foobar_metadata.disowned is True
+        assert foobarbaz_metadata.disowned is True
 
     def test_unknown_origins_no_override(self):
         """A normalized object with no known origin must be removed
         from the result when remove_unknown_origins == True.
         """
-        module = ModulePostExtraction('foo')
-        normalized_objs = {
-            'bar': NormalizedObj(
-                4,
-                (),
-                DocnoteConfig(),
-                (),
-                TypeSpec.from_typehint(int),
-                canonical_module=Singleton.UNKNOWN,
-                canonical_name=Singleton.UNKNOWN)}
+        foo_metadata = DescMetadata()
+        foo_metadata.canonical_module = 'foo'
+        foobar_metadata = DescMetadata()
+        foobar_metadata.canonical_module = None
+        summary = ModuleDesc(
+                crossref=None,
+                ordering_index=None,
+                child_groups=(),
+                parent_group_name=None,
+                metadata=foo_metadata,
+                name='foo',
+                dunder_all=None,
+                docstring=None,
+                members=frozenset({VariableDesc(
+                    name='bar',
+                    typespec=None,
+                    notes=(),
+                    crossref=None,
+                    ordering_index=None,
+                    child_groups=(),
+                    parent_group_name=None,
+                    metadata=foobar_metadata)}))
 
-        retval = filter_module_members(module, normalized_objs)
+        filter_canonical_ownership(summary)
 
-        assert not retval
+        assert foo_metadata.disowned is False
+        assert foobar_metadata.disowned is True
 
     def test_known_origin_match(self):
         """A normalized object with a known origin matching the passed
         module must be included in the result.
         """
-        module = ModulePostExtraction('foo')
-        normalized_objs = {
-            'bar': NormalizedObj(
-                4,
-                (),
-                DocnoteConfig(),
-                (),
-                TypeSpec.from_typehint(int),
-                # Not realistic -- we'd have no way of knowing where an int
-                # was from -- but good enough for this test
-                canonical_module='foo',
-                canonical_name='bar')}
+        foo_metadata = DescMetadata()
+        foo_metadata.canonical_module = 'foo'
+        foobar_metadata = DescMetadata()
+        foobar_metadata.canonical_module = 'foo'
+        summary = ModuleDesc(
+                crossref=None,
+                ordering_index=None,
+                child_groups=(),
+                parent_group_name=None,
+                metadata=foo_metadata,
+                name='foo',
+                dunder_all=None,
+                docstring=None,
+                members=frozenset({VariableDesc(
+                    name='bar',
+                    typespec=None,
+                    notes=(),
+                    crossref=None,
+                    ordering_index=None,
+                    child_groups=(),
+                    parent_group_name=None,
+                    metadata=foobar_metadata)}))
 
-        retval = filter_module_members(module, normalized_objs)
+        filter_canonical_ownership(summary)
 
-        assert retval
-        assert retval == normalized_objs
+        assert foo_metadata.disowned is False
+        assert foobar_metadata.disowned is False
 
     def test_known_origin_nomatch(self):
         """A normalized object with a known origin that doesn't match
         the passed module must not be included in the result.
         """
-        module = ModulePostExtraction('foo')
-        normalized_objs = {
-            'bar': NormalizedObj(
-                4,
-                (),
-                DocnoteConfig(),
-                (),
-                TypeSpec.from_typehint(int),
-                # Not realistic -- we'd have no way of knowing where an int
-                # was from -- but good enough for this test
-                canonical_module='oof',
-                canonical_name='bar')}
+        foo_metadata = DescMetadata()
+        foo_metadata.canonical_module = 'foo'
+        foobar_metadata = DescMetadata()
+        foobar_metadata.canonical_module = 'oof'
+        summary = ModuleDesc(
+                crossref=None,
+                ordering_index=None,
+                child_groups=(),
+                parent_group_name=None,
+                metadata=foo_metadata,
+                name='foo',
+                dunder_all=None,
+                docstring=None,
+                members=frozenset({VariableDesc(
+                    name='bar',
+                    typespec=None,
+                    notes=(),
+                    crossref=None,
+                    ordering_index=None,
+                    child_groups=(),
+                    parent_group_name=None,
+                    metadata=foobar_metadata)}))
 
-        retval = filter_module_members(module, normalized_objs)
+        filter_canonical_ownership(summary)
 
-        assert not retval
+        assert foo_metadata.disowned is False
+        assert foobar_metadata.disowned is True
 
     def test_known_origin_nomatch_config(self):
         """A normalized object with a known origin that doesn't match
         the passed module must not be included in the result, even if
         it defines a config with include_in_docs=True.
         """
-        module = ModulePostExtraction('foo')
-        normalized_objs = {
-            'bar': NormalizedObj(
-                4,
-                (),
-                DocnoteConfig(include_in_docs=True),
-                (),
-                TypeSpec.from_typehint(int),
-                # Not realistic -- we'd have no way of knowing where an int
-                # was from -- but good enough for this test
-                canonical_module='oof',
-                canonical_name='bar')}
+        foo_metadata = DescMetadata()
+        foo_metadata.canonical_module = 'foo'
+        foobar_metadata = DescMetadata()
+        foobar_metadata.canonical_module = 'oof'
+        summary = ModuleDesc(
+                crossref=None,
+                ordering_index=None,
+                child_groups=(),
+                parent_group_name=None,
+                metadata=foo_metadata,
+                name='foo',
+                dunder_all=None,
+                docstring=None,
+                members=frozenset({VariableDesc(
+                    name='bar',
+                    typespec=None,
+                    notes=(),
+                    crossref=None,
+                    ordering_index=None,
+                    child_groups=(),
+                    parent_group_name=None,
+                    metadata=foobar_metadata)}))
 
-        retval = filter_module_members(module, normalized_objs)
+        filter_canonical_ownership(summary)
 
-        assert not retval
+        assert foo_metadata.disowned is False
+        assert foobar_metadata.disowned is True
 
 
-class TestFilterInclusionRules:
+class TestFilterPrivateSummaries:
 
-    def test_not_inplace(self):
-        """The returned result must be a new object, not an inplace
-        mutation of the passed normalized objects.
+    def test_inplace_and_recursive(self):
+        """The ``to_document`` attribute must be set inplace on the
+        existing metadata objects, and it must be done recursively on
+        everything in the module.
         """
-        normalized_objs = {
-            'foo': NormalizedObj(
-                4,
-                (),
-                DocnoteConfig(),
-                (),
-                TypeSpec.from_typehint(int),
-                canonical_module=Singleton.UNKNOWN,
-                canonical_name=Singleton.UNKNOWN)}
+        foo_metadata = DescMetadata()
+        foo_metadata.canonical_module = 'foo'
+        foo_metadata.extracted_inclusion = None
+        foobar_metadata = DescMetadata()
+        foobar_metadata.canonical_module = None
+        foobar_metadata.extracted_inclusion = None
+        foobarbaz_metadata = DescMetadata()
+        foobarbaz_metadata.canonical_module = None
+        foobarbaz_metadata.extracted_inclusion = None
+        summary = ModuleDesc(
+                crossref=None,
+                ordering_index=None,
+                child_groups=(),
+                parent_group_name=None,
+                metadata=foo_metadata,
+                name='foo',
+                dunder_all=None,
+                docstring=None,
+                members=frozenset({ClassDesc(
+                    name='bar',
+                    metaclass=None,
+                    crossref=None,
+                    ordering_index=None,
+                    child_groups=(),
+                    parent_group_name=None,
+                    docstring=None,
+                    bases=(),
+                    metadata=foobar_metadata,
+                    members=frozenset({VariableDesc(
+                        name='baz',
+                        typespec=None,
+                        notes=(),
+                        crossref=None,
+                        ordering_index=None,
+                        child_groups=(),
+                        parent_group_name=None,
+                        metadata=foobarbaz_metadata)}))}))
 
-        retval = filter_inclusion_rules(normalized_objs)
+        assert not hasattr(foo_metadata, 'to_document')
+        assert not hasattr(foobar_metadata, 'to_document')
+        assert not hasattr(foobarbaz_metadata, 'to_document')
+        retval = filter_private_summaries(summary)
 
-        assert retval is not normalized_objs
+        assert retval is None
+        assert not hasattr(foo_metadata, 'to_document')
+        assert foobar_metadata.to_document is True
+        assert foobarbaz_metadata.to_document is True
 
     def test_without_configs(self):
         """Without config overrides, inclusion rules must simply follow
         python conventions.
         """
-        normalized_objs = {
-            'foo': NormalizedObj(
-                4,
-                (),
-                DocnoteConfig(),
-                (),
-                TypeSpec.from_typehint(int),
-                canonical_module=Singleton.UNKNOWN,
-                canonical_name=Singleton.UNKNOWN),
-            '_bar': NormalizedObj(
-                4,
-                (),
-                DocnoteConfig(),
-                (),
-                TypeSpec.from_typehint(int),
-                canonical_module=Singleton.UNKNOWN,
-                canonical_name=Singleton.UNKNOWN),}
+        foo_metadata = DescMetadata()
+        foo_metadata.canonical_module = 'foo'
+        foo_metadata.extracted_inclusion = None
+        foobar_metadata = DescMetadata()
+        foobar_metadata.canonical_module = None
+        foobar_metadata.extracted_inclusion = None
+        foorab_metadata = DescMetadata()
+        foorab_metadata.canonical_module = None
+        foorab_metadata.extracted_inclusion = None
+        summary = ModuleDesc(
+                crossref=None,
+                ordering_index=None,
+                child_groups=(),
+                parent_group_name=None,
+                metadata=foo_metadata,
+                name='foo',
+                dunder_all=None,
+                docstring=None,
+                members=frozenset({
+                    VariableDesc(
+                        name='bar',
+                        typespec=None,
+                        notes=(),
+                        crossref=None,
+                        ordering_index=None,
+                        child_groups=(),
+                        parent_group_name=None,
+                        metadata=foobar_metadata),
+                    VariableDesc(
+                        name='_rab',
+                        typespec=None,
+                        notes=(),
+                        crossref=None,
+                        ordering_index=None,
+                        child_groups=(),
+                        parent_group_name=None,
+                        metadata=foorab_metadata)}))
 
-        retval = filter_inclusion_rules(normalized_objs)
+        filter_private_summaries(summary)
 
-        assert 'foo' in retval
-        assert '_bar' not in retval
+        assert foobar_metadata.to_document is True
+        assert foorab_metadata.to_document is False
 
     def test_override_force_include(self):
         """When an attached config is marked include_in_docs=True, it
         it must be included in the result, regardless of python
         conventions.
         """
-        normalized_objs = {
-            'foo': NormalizedObj(
-                4,
-                (),
-                DocnoteConfig(),
-                (),
-                TypeSpec.from_typehint(int),
-                canonical_module=Singleton.UNKNOWN,
-                canonical_name=Singleton.UNKNOWN),
-            '_bar': NormalizedObj(
-                4,
-                (),
-                DocnoteConfig(include_in_docs=True),
-                (),
-                TypeSpec.from_typehint(int),
-                canonical_module=Singleton.UNKNOWN,
-                canonical_name=Singleton.UNKNOWN),}
+        foo_metadata = DescMetadata()
+        foo_metadata.canonical_module = 'foo'
+        foo_metadata.extracted_inclusion = None
+        foobar_metadata = DescMetadata()
+        foobar_metadata.canonical_module = None
+        foobar_metadata.extracted_inclusion = None
+        foorab_metadata = DescMetadata()
+        foorab_metadata.canonical_module = None
+        foorab_metadata.extracted_inclusion = True
+        summary = ModuleDesc(
+                crossref=None,
+                ordering_index=None,
+                child_groups=(),
+                parent_group_name=None,
+                metadata=foo_metadata,
+                name='foo',
+                dunder_all=None,
+                docstring=None,
+                members=frozenset({
+                    VariableDesc(
+                        name='bar',
+                        typespec=None,
+                        notes=(),
+                        crossref=None,
+                        ordering_index=None,
+                        child_groups=(),
+                        parent_group_name=None,
+                        metadata=foobar_metadata),
+                    VariableDesc(
+                        name='_rab',
+                        typespec=None,
+                        notes=(),
+                        crossref=None,
+                        ordering_index=None,
+                        child_groups=(),
+                        parent_group_name=None,
+                        metadata=foorab_metadata)}))
 
-        retval = filter_inclusion_rules(normalized_objs)
+        filter_private_summaries(summary)
 
-        assert 'foo' in retval
-        assert '_bar' in retval
+        assert foobar_metadata.to_document is True
+        assert foorab_metadata.to_document is True
 
     def test_override_force_exclude(self):
         """When an attached config is marked include_in_docs=False, it
         it must be excluded from the result, regardless of python
         conventions.
         """
-        normalized_objs = {
-            'foo': NormalizedObj(
-                4,
-                (),
-                DocnoteConfig(include_in_docs=False),
-                (),
-                TypeSpec.from_typehint(int),
-                canonical_module=Singleton.UNKNOWN,
-                canonical_name=Singleton.UNKNOWN),
-            '_bar': NormalizedObj(
-                4,
-                (),
-                DocnoteConfig(),
-                (),
-                TypeSpec.from_typehint(int),
-                canonical_module=Singleton.UNKNOWN,
-                canonical_name=Singleton.UNKNOWN),}
+        foo_metadata = DescMetadata()
+        foo_metadata.canonical_module = 'foo'
+        foo_metadata.extracted_inclusion = None
+        foobar_metadata = DescMetadata()
+        foobar_metadata.canonical_module = None
+        foobar_metadata.extracted_inclusion = False
+        foorab_metadata = DescMetadata()
+        foorab_metadata.canonical_module = None
+        foorab_metadata.extracted_inclusion = None
+        summary = ModuleDesc(
+                crossref=None,
+                ordering_index=None,
+                child_groups=(),
+                parent_group_name=None,
+                metadata=foo_metadata,
+                name='foo',
+                dunder_all=None,
+                docstring=None,
+                members=frozenset({
+                    VariableDesc(
+                        name='bar',
+                        typespec=None,
+                        notes=(),
+                        crossref=None,
+                        ordering_index=None,
+                        child_groups=(),
+                        parent_group_name=None,
+                        metadata=foobar_metadata),
+                    VariableDesc(
+                        name='_rab',
+                        typespec=None,
+                        notes=(),
+                        crossref=None,
+                        ordering_index=None,
+                        child_groups=(),
+                        parent_group_name=None,
+                        metadata=foorab_metadata)}))
 
-        retval = filter_inclusion_rules(normalized_objs)
+        filter_private_summaries(summary)
 
-        assert 'foo' not in retval
-        assert '_bar' not in retval
+        assert foobar_metadata.to_document is False
+        assert foorab_metadata.to_document is False
 
     def test_dunder_included(self):
         """Absent any config overrides, dunders with a known module
         outside of the stdlib must be included in the result.
         """
-        normalized_objs = {
-            '__add__': NormalizedObj(
-                lambda other: other + 9,
-                (),
-                DocnoteConfig(),
-                (),
-                TypeSpec.from_typehint(Callable[[int], int]),  # type: ignore
-                canonical_module='foo',
-                # A little non-intuitive, but I believe this would be correct,
-                # even for a hypothetical class like foo:Bar.__add__
-                canonical_name='__add__'),
-            '__foo__': NormalizedObj(
-                lambda other: other + 9,
-                (),
-                DocnoteConfig(),
-                (),
-                TypeSpec.from_typehint(Callable[[int], int]),  # type: ignore
-                canonical_module='foo',
-                # A little non-intuitive, but I believe this would be correct,
-                # even for a hypothetical class like foo:Bar.__foo__
-                canonical_name='__foo__'),}
+        foo_metadata = DescMetadata()
+        foo_metadata.canonical_module = 'foo'
+        foo_metadata.extracted_inclusion = None
+        foobar_metadata = DescMetadata()
+        foobar_metadata.canonical_module = 'foo'
+        foobar_metadata.extracted_inclusion = None
+        fooadd_metadata = DescMetadata()
+        fooadd_metadata.canonical_module = 'foo'
+        fooadd_metadata.extracted_inclusion = None
+        summary = ModuleDesc(
+                crossref=None,
+                ordering_index=None,
+                child_groups=(),
+                parent_group_name=None,
+                metadata=foo_metadata,
+                name='foo',
+                dunder_all=None,
+                docstring=None,
+                members=frozenset({
+                    # Note that this wouldn't actually be a variable, but it
+                    # doesn't matter for this test. What matters is that we
+                    # have a quick and easy summary with an assigned canonical
+                    # module in the metadata. I mean, it also doesn't make
+                    # sense to have an __add__ within a module. Again, doesn't
+                    # matter!
+                    VariableDesc(
+                        name='__add__',
+                        typespec=None,
+                        notes=(),
+                        crossref=None,
+                        ordering_index=None,
+                        child_groups=(),
+                        parent_group_name=None,
+                        metadata=fooadd_metadata),
+                    VariableDesc(
+                        name='__bar__',
+                        typespec=None,
+                        notes=(),
+                        crossref=None,
+                        ordering_index=None,
+                        child_groups=(),
+                        parent_group_name=None,
+                        metadata=foobar_metadata)}))
 
-        retval = filter_inclusion_rules(normalized_objs)
+        filter_private_summaries(summary)
 
-        assert '__add__' in retval
-        assert '__foo__' in retval
+        assert foobar_metadata.to_document is True
+        assert fooadd_metadata.to_document is True
 
     def test_dunder_excluded(self):
         """Absent any config overrides, dunders without a known module,
         or with a module source from within the stdlib, must be excluded
         from the result.
         """
-        normalized_objs = {
-            '__dir__': NormalizedObj(
-                lambda: True,
-                (),
-                DocnoteConfig(),
-                (),
-                TypeSpec.from_typehint(Callable[[], bool]),  # type: ignore
-                canonical_module=None,
-                canonical_name='__dir__'),
-            '__init__': NormalizedObj(
-                lambda: True,
-                (),
-                DocnoteConfig(),
-                (),
-                TypeSpec.from_typehint(Callable[[], bool]),  # type: ignore
-                canonical_module='typing',
-                # Fun fact: this is what you get from a protocol __init__ if
-                # you don't declare one within the protocol
-                canonical_name='_no_init_or_replace_init'),
-            '__foo__': NormalizedObj(
-                lambda: True,
-                (),
-                DocnoteConfig(),
-                (),
-                TypeSpec.from_typehint(Callable[[], bool]),  # type: ignore
-                canonical_module=Singleton.UNKNOWN,
-                canonical_name=Singleton.UNKNOWN),}
+        foo_metadata = DescMetadata()
+        foo_metadata.canonical_module = 'foo'
+        foo_metadata.extracted_inclusion = None
+        foobar_metadata = DescMetadata()
+        foobar_metadata.canonical_module = None
+        foobar_metadata.extracted_inclusion = None
+        foodir_metadata = DescMetadata()
+        foodir_metadata.canonical_module = 'typing'
+        foodir_metadata.extracted_inclusion = None
+        fooinit_metadata = DescMetadata()
+        fooinit_metadata.canonical_module = None
+        fooinit_metadata.extracted_inclusion = None
+        summary = ModuleDesc(
+                crossref=None,
+                ordering_index=None,
+                child_groups=(),
+                parent_group_name=None,
+                metadata=foo_metadata,
+                name='foo',
+                dunder_all=None,
+                docstring=None,
+                members=frozenset({
+                    # Note that this wouldn't actually be a variable, but it
+                    # doesn't matter for this test. What matters is that we
+                    # have a quick and easy summary with an assigned canonical
+                    # module in the metadata. I mean, it also doesn't make
+                    # sense to have an __add__ within a module. Again, doesn't
+                    # matter!
+                    VariableDesc(
+                        name='__dir__',
+                        typespec=None,
+                        notes=(),
+                        crossref=None,
+                        ordering_index=None,
+                        child_groups=(),
+                        parent_group_name=None,
+                        metadata=foodir_metadata),
+                    VariableDesc(
+                        name='__bar__',
+                        typespec=None,
+                        notes=(),
+                        crossref=None,
+                        ordering_index=None,
+                        child_groups=(),
+                        parent_group_name=None,
+                        metadata=foobar_metadata),
+                    VariableDesc(
+                        name='__init__',
+                        typespec=None,
+                        notes=(),
+                        crossref=None,
+                        ordering_index=None,
+                        child_groups=(),
+                        parent_group_name=None,
+                        metadata=fooinit_metadata)}))
 
-        retval = filter_inclusion_rules(normalized_objs)
+        filter_private_summaries(summary)
 
-        assert '__dir__' not in retval
-        assert '__init__' not in retval
-        assert '__foo__' not in retval
+        assert foobar_metadata.to_document is False
+        assert foodir_metadata.to_document is False
+        assert fooinit_metadata.to_document is False
 
 
 @pytest.mark.parametrize(
