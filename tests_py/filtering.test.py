@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from collections.abc import Callable
-
 import pytest
 from docnote import DocnoteConfig
 
@@ -10,15 +8,12 @@ from docnote_extract._module_tree import SummaryTreeNode
 from docnote_extract._summarization import DescMetadata
 from docnote_extract._types import ClassDesc
 from docnote_extract._types import ModuleDesc
-from docnote_extract._types import Singleton
 from docnote_extract._types import VariableDesc
 from docnote_extract.filtering import _conventionally_private
 from docnote_extract.filtering import _is_dunder
 from docnote_extract.filtering import filter_canonical_ownership
 from docnote_extract.filtering import filter_module_summaries
 from docnote_extract.filtering import filter_private_summaries
-from docnote_extract.normalization import NormalizedObj
-from docnote_extract.normalization import TypeSpec
 
 
 class TestFilterModuleSummaries:
