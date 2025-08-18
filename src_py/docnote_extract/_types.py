@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import inspect
 import typing
+from collections.abc import Iterator
 from collections.abc import Sequence
 from dataclasses import dataclass
 from dataclasses import field
@@ -196,28 +197,59 @@ class DocText:
 
 
 class DescMetadataProtocol(Protocol):
-    include_in_docs_as_configured: Annotated[
+    extracted_inclusion: Annotated[
         bool | None,
         Note('''This directly copies the underlying object's
-            ``DocnoteConfig.included_in_docts`` value, and represents an
+            ``DocnoteConfig.included_in_docs`` value, and represents an
             explicit override by the code author.
 
             It is set after the metadata instance is created via the
             factory method passed to ``summarize_module``, and then used
-            to help determine the final value of ``include_in_docs``
+            to help determine the final value of ``to_document``
             during final filtering.''')]
-    include_in_docs_final: Annotated[
+
+    canonical_module: Annotated[
+        str | None,
+        Note('''For any objects that can be attributed a canonical
+            module (typically via the object's ``__module__`` attribute),
+            this will be set to the fullname (ex ``foo.bar``) of that
+            module. If no canonical module can be determined, it will be
+            set to None.
+
+            This is set after the metadata instance is created via the
+            metadata factory method, and then used during filtering (to
+            determine canonical ownership and remove extraneous stdlib
+            dunder methods).''')]
+
+    to_document: Annotated[
         bool,
-        Note('''This value is set during final filtering, and reflects
+        Note('''This value is initially set during filtering, and reflects
             whether or not the value is ^^directly^ included in the
             final docs (note that it might still be ^^indirectly^^
             included -- for example as an aside -- but that this is
             dependent upon the documentation generator).
 
-            Documentation generators can use this to, for example,
-            implicitly include any mixin methods of a private base class
-            in the documentation of its public descendants.
-            ''')]
+            Note that, in the case of module summaries, this will be
+            initially redundant with the read-only ``to_document`` value
+            on the ``SummaryTreeNode`` for the module. However, unlike the
+            summary tree node, this value can be freely modified by docs
+            generation library, allowing it to be explicitly overridden
+            (whether explicitly by the user or implicitly by the docs
+            generation library) as part of the docs generation process.
+
+            Beyond modules, documentation generators can use this to, for
+            example, implicitly include any mixin methods of a private base
+            class in the documentation of its public descendants.''')]
+
+    disowned: Annotated[
+        bool,
+        Note('''This value is initially set during filtering to describe
+            whether or not the description should be considered a member of
+            its containing module. If ``False``, it must be excluded from
+            documentation for that particular module (though it may very
+            well be included elsewhere, as will be the case for
+            imported firstparty names within a module's namespace).''')]
+
     crossref_namespace: Annotated[
         dict[str, Crossref],
         Note('''This contains a snapshot of any objects contained within
@@ -281,6 +313,13 @@ class _DescBaseProtocol[T: DescMetadataProtocol](Protocol):
         """
         ...
 
+    def linearize(self) -> Iterator[DescBase[T]]:
+        """Yield all of the nodes at the description, recursively,
+        in a depth-first fashion. Primarily intended for updating
+        metadata values based on filters.
+        """
+        ...
+
 
 @dataclass(slots=True, frozen=True, kw_only=True)
 class DescBase[T: DescMetadataProtocol](_DescBaseProtocol[T]):
@@ -303,7 +342,7 @@ class DescBase[T: DescMetadataProtocol](_DescBaseProtocol[T]):
 @dataclass(slots=True, frozen=True, kw_only=True)
 class ModuleDesc[T: DescMetadataProtocol](DescBase[T]):
     name: Annotated[str, Note('The module fullname, ex ``foo.bar.baz``.')]
-    dunder_all: frozenset[str]
+    dunder_all: frozenset[str] | None
     docstring: DocText | None
     members: frozenset[
         ClassDesc[T]
@@ -323,6 +362,20 @@ class ModuleDesc[T: DescMetadataProtocol](DescBase[T]):
     def traverse(self, traversal: CrossrefTraversal) -> DescBase[T]:
         # KeyError is a LookupError subclass, so this is fine.
         return self._member_lookup[traversal]
+
+    def linearize(self) -> Iterator[DescBase[T]]:
+        yield self
+        for child in self.members:
+            yield from child.linearize()
+
+    def in_dunder_all(self, name: str) -> bool:
+        """Returns True if the module has a dunder all declared **and**
+        the name was found within it.
+        """
+        if self.dunder_all is None:
+            return False
+        else:
+            return name in self.dunder_all
 
 
 @dataclass(slots=True, frozen=True, kw_only=True)
@@ -345,6 +398,9 @@ class CrossrefDesc[T: DescMetadataProtocol](DescBase[T]):
     def traverse(self, traversal: CrossrefTraversal) -> DescBase[T]:
         raise LookupError(
             'Crossref descriptions have no traversals', self, traversal)
+
+    def linearize(self) -> Iterator[DescBase[T]]:
+        yield self
 
 
 @dataclass(slots=True, frozen=True, kw_only=True)
@@ -370,6 +426,9 @@ class VariableDesc[T: DescMetadataProtocol](DescBase[T]):
     def traverse(self, traversal: CrossrefTraversal) -> DescBase[T]:
         raise LookupError(
             'Variable descriptions have no traversals', self, traversal)
+
+    def linearize(self) -> Iterator[DescBase[T]]:
+        yield self
 
 
 @dataclass(slots=True, frozen=True, kw_only=True)
@@ -402,6 +461,11 @@ class ClassDesc[T: DescMetadataProtocol](DescBase[T]):
     def traverse(self, traversal: CrossrefTraversal) -> DescBase[T]:
         # KeyError is a LookupError subclass, so this is fine.
         return self._member_lookup[traversal]
+
+    def linearize(self) -> Iterator[DescBase[T]]:
+        yield self
+        for child in self.members:
+            yield from child.linearize()
 
 
 @dataclass(slots=True, frozen=True, kw_only=True)
@@ -467,6 +531,11 @@ class CallableDesc[T: DescMetadataProtocol](DescBase[T]):
 
         return self._member_lookup[traversal]
 
+    def linearize(self) -> Iterator[DescBase[T]]:
+        yield self
+        for child in self.signatures:
+            yield from child.linearize()
+
 
 @dataclass(slots=True, frozen=True, kw_only=True)
 class SignatureDesc[T: DescMetadataProtocol](DescBase[T]):
@@ -506,6 +575,12 @@ class SignatureDesc[T: DescMetadataProtocol](DescBase[T]):
         # KeyError is a LookupError subclass, so this is fine.
         return self._member_lookup[traversal]
 
+    def linearize(self) -> Iterator[DescBase[T]]:
+        yield self
+        for child in self.params:
+            yield from child.linearize()
+        yield self.retval
+
 
 @dataclass(slots=True, frozen=True, kw_only=True)
 class ParamDesc[T: DescMetadataProtocol](DescBase[T]):
@@ -529,6 +604,9 @@ class ParamDesc[T: DescMetadataProtocol](DescBase[T]):
         raise LookupError(
             'Param descriptions have no traversals', self, traversal)
 
+    def linearize(self) -> Iterator[DescBase[T]]:
+        yield self
+
 
 @dataclass(slots=True, frozen=True, kw_only=True)
 class RetvalDesc[T: DescMetadataProtocol](DescBase[T]):
@@ -547,3 +625,6 @@ class RetvalDesc[T: DescMetadataProtocol](DescBase[T]):
     def traverse(self, traversal: CrossrefTraversal) -> DescBase[T]:
         raise LookupError(
             'Retval descriptions have no traversals', self, traversal)
+
+    def linearize(self) -> Iterator[DescBase[T]]:
+        yield self

@@ -7,10 +7,13 @@ from dataclasses import KW_ONLY
 from dataclasses import dataclass
 from dataclasses import field
 from dataclasses import fields as dc_fields
+from typing import Annotated
 from typing import Self
 
 from docnote import DocnoteConfig
+from docnote import Note
 
+from docnote_extract._types import ModuleDesc
 from docnote_extract._utils import coerce_config
 from docnote_extract._utils import validate_config
 
@@ -18,7 +21,7 @@ if typing.TYPE_CHECKING:
     from docnote_extract._extraction import ModulePostExtraction
 
 
-@dataclass(slots=True)
+@dataclass(slots=True, frozen=True)
 class ModuleTreeNode:
     """Module trees represent the hierarchy of modules within a package.
     They also provide some utility functions to navigate the module
@@ -68,7 +71,7 @@ class ModuleTreeNode:
         return type(self)(**params)
 
     def linearize(self) -> Iterator[Self]:
-        """Yields all of the noeds in the tree in a depth-first
+        """Yields all of the nodes in the tree in a depth-first
         fashion.
         """
         yield self
@@ -113,7 +116,7 @@ class ModuleTreeNode:
         return self.children[other]
 
 
-@dataclass(slots=True)
+@dataclass(slots=True, frozen=True)
 class ConfiguredModuleTreeNode(ModuleTreeNode):
     """In addition to the underlying base module tree, these include
     both the actual module-post-extraction and the effective docnote
@@ -171,3 +174,47 @@ class ConfiguredModuleTreeNode(ModuleTreeNode):
                     effective_config=cfg)
 
         return roots_by_pkg
+
+
+@dataclass(slots=True, frozen=True)
+class SummaryTreeNode(ModuleTreeNode):
+    _: KW_ONLY
+    module_summary: ModuleDesc = field(compare=False, repr=False)
+    to_document: Annotated[
+            bool | None,
+            Note('''This is the value determined during filtering for whether
+                or not a particular module summary should be included in
+                the final documentation. After calling
+                ``filter_module_summaries``, this will always be in sync with
+                the ``to_document`` attribute on the ``module_summary``'s
+                metadata. However, docs generation libraries might modify the
+                value on the description metadata (for example, to "hoist" an
+                otherwise undocumented private module based on its usage in a
+                different public module), causing the two values to drift out
+                of sync.''')
+        ] = field(default=None, compare=False, init=False)
+
+    @classmethod
+    def from_configured_module_tree(
+            cls,
+            configured_tree_node: ConfiguredModuleTreeNode,
+            summary_lookup: dict[str, ModuleDesc]
+            ) -> SummaryTreeNode:
+        """Uses a ``{module_name: module_summary}`` lookup to
+        recursively convert a single``ConfiguredModuleTreeNode``
+        root node into a ``SummaryTreeNode`` instance.
+        """
+        kwargs = {}
+        for dc_field in dc_fields(ModuleTreeNode):
+            if dc_field.name != 'children':
+                kwargs[dc_field.name] = getattr(
+                    configured_tree_node, dc_field.name)
+
+        children = {
+            name: cls.from_configured_module_tree(node, summary_lookup)
+            for name, node in configured_tree_node.children.items()}
+
+        return cls(
+            **kwargs,
+            children=children,
+            module_summary=summary_lookup[configured_tree_node.fullname])

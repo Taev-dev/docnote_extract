@@ -3,9 +3,11 @@ from __future__ import annotations
 import sys
 from collections.abc import Callable
 
+from docnote_extract._crossrefs import GetattrTraversal
 from docnote_extract._extraction import ModulePostExtraction
 from docnote_extract._module_tree import ConfiguredModuleTreeNode
-from docnote_extract._types import Singleton
+from docnote_extract._module_tree import SummaryTreeNode
+from docnote_extract._types import ModuleDesc
 from docnote_extract.normalization import NormalizedObj
 
 type ModuleObjectFilter = Callable[
@@ -15,47 +17,69 @@ type ObjectFilter = Callable[
     [dict[str, NormalizedObj]], dict[str, NormalizedObj]]
 
 
-def filter_modules(
-        module_tree: ConfiguredModuleTreeNode,
-        ) -> ConfiguredModuleTreeNode | None:
-    """Recursively walks the passed module tree, filtering out any
-    private modules (modules with a relname beginning with an
-    underscore, but not ``__dunders__``). Note that this can be
-    overwritten by the module's effective config's ``include_in_docs``
-    setting, to force the module to be included or skipped.
-
-    Note that this must be applied **after** generating summarizations,
-    since there might be re-exports of modules filtered out of the
-    result.
-    """
-    effective_config = module_tree.effective_config
-
-    if (
-        effective_config.include_in_docs is False
-        or (
-            _conventionally_private(module_tree.relname)
-            and not effective_config.include_in_docs)
-    ):
-        return None
-
-    filtered_node = module_tree.clone_without_children()
-    for child_name, child_node in module_tree.children.items():
-        filtered_child = filter_modules(child_node)
-        if filtered_child is not None:
-            filtered_node.children[child_name] = filtered_child
-
-    return filtered_node
-
-
-def filter_module_members(
-        module: ModulePostExtraction,
-        normalized_objs: dict[str, NormalizedObj],
+def filter_module_summaries(
+        summary_tree_node: SummaryTreeNode,
+        configured_tree_node: ConfiguredModuleTreeNode,
         *,
-        remove_unknown_origins: bool = True
-        ) -> dict[str, NormalizedObj]:
-    """Given a normalized module ``__dict__``, this filters out all
-    entries that cannot be assigned to the passed (canonical)
-    ``src_module``.
+        _forced_inclusion: bool | None = None
+        ) -> None:
+    """Recursively walks the passed module tree, setting the
+    ``to_document`` value on all module descriptions within the tree,
+    but not any of the modules' members.
+
+    Private modules (modules with a relname beginning with an
+    underscore, but not ``__dunders__``) and their children will receive
+    ``to_document=False`` unless overwritten by the module's effective
+    config's ``include_in_docs`` setting.
+
+    Note that this operates in-place.
+    """
+    if _forced_inclusion is None:
+        effective_config = configured_tree_node.effective_config
+
+        if (
+            effective_config.include_in_docs is False
+            or (
+                _conventionally_private(summary_tree_node.relname)
+                and not effective_config.include_in_docs)
+        ):
+            is_included = False
+            inclusion_to_force = False
+
+        else:
+            is_included = True
+            inclusion_to_force = None
+
+    else:
+        inclusion_to_force = _forced_inclusion
+        is_included = _forced_inclusion
+
+    if is_included:
+        # Doing it this way to bypass the frozen-ness
+        object.__setattr__(summary_tree_node, 'to_document', True)
+        summary_tree_node.module_summary.metadata.to_document = True
+    else:
+        # Doing it this way to bypass the frozen-ness
+        object.__setattr__(summary_tree_node, 'to_document', False)
+        summary_tree_node.module_summary.metadata.to_document = False
+
+    for relname, child in summary_tree_node.children.items():
+        filter_module_summaries(
+            child,
+            configured_tree_node / relname,
+            _forced_inclusion=inclusion_to_force)
+
+
+def filter_canonical_ownership(
+        module_summary: ModuleDesc,
+        *,
+        remove_unknown_origins: bool = True,
+        ) -> None:
+    """Given a module summary and its associated normalized objs lookup,
+    this sets ``disowned=True`` on the metadata for all summaries that
+    cannot be attributed to passed module, recursively. Note that only
+    toplevel module members can be disowned, and their disownment
+    applies recursively to all child objects.
 
     Note that seeing a config value for ``include_in_docs`` is not
     relevant to this, for two reasons:
@@ -64,74 +88,91 @@ def filter_module_members(
     ++  **all of the canonical module inference logic is contained
         within normalization!**
     """
-    dunder_all: set[str] = set(getattr(module, '__all__', ()))
-    module_name = module.__name__
+    module_name = module_summary.name
+    # Modules themselves can, by definition, never be disowned
+    module_summary.metadata.disowned = False
 
-    retval = {}
-    for name, normalized_obj in normalized_objs.items():
+    for module_member in module_summary.members:
+        name = module_member.name
+        canonical_module = module_member.metadata.canonical_module
+
         # Dunder all must ALWAYS be included!
-        if name in dunder_all:
-            retval[name] = normalized_obj
-            continue
+        if module_summary.in_dunder_all(name):
+            _set_canonical_ownership(module_summary, name, disowned=False)
 
-        canonical_module = normalized_obj.canonical_module
-        if canonical_module is Singleton.UNKNOWN:
-            if not remove_unknown_origins:
-                # Note: remove_unknown_origins=False also applies to the name,
-                # so there's no need to check it
-                retval[name] = normalized_obj
-            continue
+        elif canonical_module is None:
+            if remove_unknown_origins:
+                _set_canonical_ownership(module_summary, name, disowned=True)
+            else:
+                _set_canonical_ownership(module_summary, name, disowned=False)
 
-        if canonical_module == module_name:
-            canonical_name = normalized_obj.canonical_name
-            if (
-                canonical_name is not None
-                and (
-                    not remove_unknown_origins
-                    or isinstance(canonical_name, str))
-            ):
-                retval[name] = normalized_obj
+        elif canonical_module == module_name:
+            _set_canonical_ownership(module_summary, name, disowned=False)
 
-    return retval
+        else:
+            _set_canonical_ownership(module_summary, name, disowned=True)
 
 
-def filter_inclusion_rules(
-        normalized_objs: dict[str, NormalizedObj]
-        ) -> dict[str, NormalizedObj]:
-    """Given a dict of normalized objects, this applies first the
+def _set_canonical_ownership(
+        module_summary: ModuleDesc,
+        toplevel_name: str,
+        disowned: bool
+        ) -> None:
+    module_member = module_summary / GetattrTraversal(toplevel_name)
+
+    for desc in module_member.linearize():
+        desc.metadata.disowned = disowned
+
+
+def filter_private_summaries(module_summary: ModuleDesc) -> None:
+    """Given an existing module summary with initialized metadata (ie,
+    ``extracted_inclusion`` has been set), this applies first the
     normal python conventions (single-underscore names are private),
     and then the effective config for the object, resulting in a final
     decision about whether or not the object should be included in docs
-    or not.
+    or not. This is then set on the ``to_document`` attribute.
+
+    Note that the module summary itself is skipped, as it gets set
+    during ``filter_module_summaries``.
     """
-    retval: dict[str, NormalizedObj] = {}
-
-    for name, normalized_obj in normalized_objs.items():
-        effective_config = normalized_obj.effective_config
-        if effective_config.include_in_docs is False:
+    for summary in module_summary.linearize():
+        # We don't want this to be contingent upon the ordering of the
+        # flattened summaries, and this isn't super performance sensitive,
+        # and ``is`` is very fast. Therefore, just do this every iteration.
+        if summary is module_summary:
             continue
-        # Dunders need special handling, because otherwise they generate a LOT
-        # of noise.
-        # We want to restrict the returned members to things that were actually
-        # defined by the library being documented, not things that are coming
-        # directly from the stdlib.
-        elif _is_dunder(name):
-            if (
-                normalized_obj.canonical_module is None
-                or normalized_obj.canonical_module is Singleton.UNKNOWN
-                or normalized_obj.canonical_module in sys.stdlib_module_names
+
+        name: str | None = getattr(summary, 'name', None)
+        extracted_inclusion = summary.metadata.extracted_inclusion
+        canonical_module = summary.metadata.canonical_module
+        if extracted_inclusion is False:
+            summary.metadata.to_document = False
+
+        elif name is not None:
+            # Dunders need special handling, because otherwise they generate a
+            # LOT of noise.
+            # We want to restrict the returned members to things that were
+            # actually defined by the library being documented, not things that
+            # are coming directly from the stdlib.
+            if _is_dunder(name):
+                if (
+                    canonical_module is None
+                    or canonical_module in sys.stdlib_module_names
+                ):
+                    summary.metadata.to_document = False
+                else:
+                    summary.metadata.to_document = True
+
+            elif (
+                _conventionally_private(name)
+                and not extracted_inclusion
             ):
-                continue
+                summary.metadata.to_document = False
+            else:
+                summary.metadata.to_document = True
 
-        elif (
-            _conventionally_private(name)
-            and not effective_config.include_in_docs
-        ):
-            continue
-
-        retval[name] = normalized_obj
-
-    return retval
+        else:
+            summary.metadata.to_document = True
 
 
 def _is_dunder(name: str) -> bool:
