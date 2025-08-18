@@ -54,10 +54,10 @@ class TestObjClassification:
             (FakeClass.classmethod_, CallableSummary),
             (FakeClass.staticmethod_, CallableSummary),
             (int.__add__, CallableSummary),])
-    def test_get_desc_class(
+    def test_get_summary_class(
             self, src_obj, expected_retval: type[SummaryBase] | None):
-        """get_desc_class must return the expected desc class for the
-        underlying object, or None if a reftype.
+        """get_summary_class must return the expected summary class for
+        the underlying object, or None if a reftype.
         """
         classification = ObjClassification.from_obj(src_obj)
-        assert classification.get_desc_class() is expected_retval
+        assert classification.get_summary_class() is expected_retval

@@ -53,24 +53,24 @@ from docnote_extract.normalization import normalize_namespace_item
 
 logger = logging.getLogger(__name__)
 
-_desc_factories: dict[type[SummaryBase], _SummaryFactoryProtocol] = {}
-def _desc_factory[T: SummaryBase](
-        desc_type: type[T]
+_summary_factories: dict[type[SummaryBase], _SummaryFactoryProtocol] = {}
+def _summary_factory[T: SummaryBase](
+        summary_type: type[T]
         ) -> Callable[
             [_SummaryFactoryProtocol[T]], _SummaryFactoryProtocol[T]]:
-    """Second-order decorator for declaring a description factory."""
+    """Second-order decorator for declaring a summary factory."""
     def decorator(
             func: _SummaryFactoryProtocol[T]) -> _SummaryFactoryProtocol[T]:
         recast = cast(_SummaryFactoryAttrProto, func)
-        recast._desc_factory_type = desc_type
-        _desc_factories[desc_type] = func
+        recast._summary_factory_type = summary_type
+        _summary_factories[summary_type] = func
         return func
 
     return decorator
 
 
 class _SummaryFactoryAttrProto(Protocol):
-    _desc_factory_type: type[SummaryBase]
+    _summary_factory_type: type[SummaryBase]
 
 
 class _SummaryFactoryProtocol[T: SummaryBase](Protocol):
@@ -84,17 +84,17 @@ class _SummaryFactoryProtocol[T: SummaryBase](Protocol):
             *,
             module_globals: dict[str, Any],
             in_class: bool = False,
-            desc_metadata_factory: SummaryMetadataFactoryProtocol,
+            summary_metadata_factory: SummaryMetadataFactoryProtocol,
             ) -> T:
         """Given an object and its classification, construct a
-        description instance, populating it with any required children.
+        summary instance, populating it with any required children.
         """
         ...
 
 
 @dataclass(slots=True, init=False)
 class SummaryMetadata(SummaryMetadataProtocol):
-    """The default implementation for summary description metadata.
+    """The default implementation for summary metadata.
     """
     extracted_inclusion: bool | None
     canonical_module: str | None
@@ -107,7 +107,7 @@ class SummaryMetadata(SummaryMetadataProtocol):
             cls,
             *,
             classification: ObjClassification | None,
-            desc_class: type[SummaryBase],
+            summary_class: type[SummaryBase],
             crossref: Crossref | None,
             annotateds: tuple[LazyResolvingValue, ...],
             metadata: dict[str, Any]
@@ -121,11 +121,11 @@ def summarize_module[T: SummaryMetadataProtocol](
                 dict[str, NormalizedObj],
                 Note('All module members, with no filters applied.')],
         module_tree: ConfiguredModuleTreeNode,
-        desc_metadata_factory:
+        summary_metadata_factory:
             SummaryMetadataFactoryProtocol[T] = SummaryMetadata.factory
         ) -> ModuleSummary[T]:
     """For the passed post-extraction module, iterates across all
-    normalized_objs and extracts their descriptions, returning them
+    normalized_objs and extracts their summaries, returning them
     combined into a single ``ModuleSummary``.
     """
     module_crossref = Crossref(
@@ -136,7 +136,7 @@ def summarize_module[T: SummaryMetadataProtocol](
     module_members = set()
     for name, normalized_obj in normalized_objs.items():
         classification = ObjClassification.from_obj(normalized_obj.obj_or_stub)
-        desc_class = classification.get_desc_class()
+        summary_class = classification.get_summary_class()
         # This seems, at first glance, to be weird. Like, how can we have a
         # module here? Except if you do ``import foo``... welp, now you have
         # a module object!
@@ -157,29 +157,29 @@ def summarize_module[T: SummaryMetadataProtocol](
                     normalized_obj.effective_config.child_groups or (),
                 parent_group_name=
                     normalized_obj.effective_config.parent_group_name,
-                metadata=desc_metadata_factory(
+                metadata=summary_metadata_factory(
                     classification=classification,
-                    desc_class=CrossrefSummary,
+                    summary_class=CrossrefSummary,
                     crossref=crossref,
                     annotateds=tuple(
                         LazyResolvingValue.from_annotated(annotated)
                         for annotated in normalized_obj.annotateds),
                     metadata=normalized_obj.effective_config.metadata or {})))
 
-        elif desc_class is not None:
-            factory = _desc_factories[desc_class]
+        elif summary_class is not None:
+            factory = _summary_factories[summary_class]
             module_members.add(factory(
                 name,
                 namespace,
                 normalized_obj,
                 classification,
-                desc_metadata_factory=desc_metadata_factory,
+                summary_metadata_factory=summary_metadata_factory,
                 module_globals=module.__dict__))
 
     config = module_tree.find(module.__name__).effective_config
-    metadata = desc_metadata_factory(
+    metadata = summary_metadata_factory(
         classification=ObjClassification.from_obj(module),
-        desc_class=ModuleSummary,
+        summary_class=ModuleSummary,
         crossref=module_crossref,
         annotateds=(),
         metadata=config.metadata or {})
@@ -192,7 +192,7 @@ def summarize_module[T: SummaryMetadataProtocol](
     else:
         dunder_all = None
 
-    desc = ModuleSummary(
+    return ModuleSummary(
         crossref=module_crossref,
         name=module.__name__,
         ordering_index=config.ordering_index,
@@ -202,11 +202,10 @@ def summarize_module[T: SummaryMetadataProtocol](
         dunder_all=dunder_all,
         docstring=extract_docstring(module, config),
         members=frozenset(module_members))
-    return desc
 
 
-@_desc_factory(CrossrefSummary)
-def create_crossref_desc(
+@_summary_factory(CrossrefSummary)
+def create_crossref_summary(
         name_in_parent: str,
         parent_crossref_namespace: dict[str, Crossref],
         obj: NormalizedObj,
@@ -214,10 +213,10 @@ def create_crossref_desc(
         *,
         module_globals: dict[str, Any],
         in_class: bool = False,
-        desc_metadata_factory: SummaryMetadataFactoryProtocol,
+        summary_metadata_factory: SummaryMetadataFactoryProtocol,
         ) -> CrossrefSummary:
     """Given an object and its classification, construct a
-    description instance, populating it with any required children.
+    summary instance, populating it with any required children.
     """
     src_obj = obj.obj_or_stub
     # Note: this cannot have traversals, or it would have been classified
@@ -227,9 +226,9 @@ def create_crossref_desc(
             'Impossible branch: re-export from non-reftype!', obj)
 
     crossref = parent_crossref_namespace[name_in_parent]
-    metadata = desc_metadata_factory(
+    metadata = summary_metadata_factory(
         classification=classification,
-        desc_class=ModuleSummary,
+        summary_class=ModuleSummary,
         crossref=crossref,
         annotateds=tuple(
             LazyResolvingValue.from_annotated(annotated)
@@ -254,8 +253,8 @@ def create_crossref_desc(
         metadata=metadata)
 
 
-@_desc_factory(VariableSummary)
-def create_variable_desc(
+@_summary_factory(VariableSummary)
+def create_variable_summary(
         name_in_parent: str,
         parent_crossref_namespace: dict[str, Crossref],
         obj: NormalizedObj,
@@ -263,10 +262,10 @@ def create_variable_desc(
         *,
         module_globals: dict[str, Any],
         in_class: bool = False,
-        desc_metadata_factory: SummaryMetadataFactoryProtocol,
+        summary_metadata_factory: SummaryMetadataFactoryProtocol,
         ) -> VariableSummary:
     """Given an object and its classification, construct a
-    description instance, populating it with any required children.
+    summary instance, populating it with any required children.
     """
     src_obj = obj.obj_or_stub
 
@@ -281,9 +280,9 @@ def create_variable_desc(
             src_obj)
 
     crossref = parent_crossref_namespace[name_in_parent]
-    metadata = desc_metadata_factory(
+    metadata = summary_metadata_factory(
         classification=classification,
-        desc_class=ModuleSummary,
+        summary_class=ModuleSummary,
         crossref=crossref,
         annotateds=tuple(
             LazyResolvingValue.from_annotated(annotated)
@@ -315,8 +314,8 @@ def create_variable_desc(
         metadata=metadata)
 
 
-@_desc_factory(ClassSummary)
-def create_class_desc(
+@_summary_factory(ClassSummary)
+def create_class_summary(
         name_in_parent: str,
         parent_crossref_namespace: dict[str, Crossref],
         obj: NormalizedObj,
@@ -324,7 +323,7 @@ def create_class_desc(
         *,
         module_globals: dict[str, Any],
         in_class: bool = False,
-        desc_metadata_factory: SummaryMetadataFactoryProtocol,
+        summary_metadata_factory: SummaryMetadataFactoryProtocol,
         ) -> ClassSummary:
     src_obj = cast(type, obj.obj_or_stub)
     config = obj.effective_config
@@ -358,12 +357,12 @@ def create_class_desc(
     for name, normalized_obj in normalized_members.items():
         classification = ObjClassification.from_obj(
             normalized_obj.obj_or_stub)
-        desc_class = classification.get_desc_class()
-        if desc_class is not None and issubclass(
-            desc_class,
+        summary_class = classification.get_summary_class()
+        if summary_class is not None and issubclass(
+            summary_class,
             ClassSummary | VariableSummary | CallableSummary | CrossrefSummary
         ):
-            factory = _desc_factories[desc_class]
+            factory = _summary_factories[summary_class]
             namespace[name] = crossref / GetattrTraversal(name)
             members[name] = factory(
                 name,
@@ -371,7 +370,7 @@ def create_class_desc(
                 normalized_obj,
                 classification,
                 module_globals=module_globals,
-                desc_metadata_factory=desc_metadata_factory,
+                summary_metadata_factory=summary_metadata_factory,
                 in_class=True)
 
     if has_crossreffed_base(src_obj):
@@ -388,9 +387,9 @@ def create_class_desc(
     else:
         metaclass = None
 
-    metadata = desc_metadata_factory(
+    metadata = summary_metadata_factory(
         classification=classification,
-        desc_class=ModuleSummary,
+        summary_class=ModuleSummary,
         crossref=crossref,
         annotateds=tuple(
             LazyResolvingValue.from_annotated(annotated)
@@ -417,8 +416,8 @@ def create_class_desc(
         docstring=extract_docstring(src_obj, config),)
 
 
-@_desc_factory(CallableSummary)
-def create_callable_desc(
+@_summary_factory(CallableSummary)
+def create_callable_summary(
         name_in_parent: str,
         parent_crossref_namespace: dict[str, Crossref],
         obj: NormalizedObj,
@@ -426,10 +425,10 @@ def create_callable_desc(
         *,
         in_class: bool = False,
         module_globals: dict[str, Any],
-        desc_metadata_factory: SummaryMetadataFactoryProtocol,
+        summary_metadata_factory: SummaryMetadataFactoryProtocol,
         ) -> CallableSummary:
     """Given an object and its classification, construct a
-    description instance, populating it with any required children.
+    summary instance, populating it with any required children.
     """
     crossref = parent_crossref_namespace[name_in_parent]
     src_obj = obj.obj_or_stub
@@ -506,7 +505,7 @@ def create_callable_desc(
                 signature_config=overload_config,
                 parent_effective_config=obj.effective_config,
                 module_globals=module_globals,
-                desc_metadata_factory=desc_metadata_factory)
+                summary_metadata_factory=summary_metadata_factory)
             if signature is None:
                 namespace_expansion.pop(namespace_expansion_key, None)
             else:
@@ -525,15 +524,15 @@ def create_callable_desc(
             signature_config=implementation_config,
             parent_effective_config=obj.effective_config,
             module_globals=module_globals,
-            desc_metadata_factory=desc_metadata_factory)
+            summary_metadata_factory=summary_metadata_factory)
         if signature is not None:
             signatures.append(signature)
             namespace_expansion['__signature_impl__'] = signature_crossref
 
     crossref = parent_crossref_namespace[name_in_parent]
-    metadata = desc_metadata_factory(
+    metadata = summary_metadata_factory(
         classification=classification,
-        desc_class=ModuleSummary,
+        summary_class=ModuleSummary,
         crossref=crossref,
         annotateds=tuple(
             LazyResolvingValue.from_annotated(annotated)
@@ -571,7 +570,7 @@ def _make_signature(  # noqa: PLR0913
         parent_effective_config: DocnoteConfig,
         *,
         module_globals: dict[str, Any],
-        desc_metadata_factory: SummaryMetadataFactoryProtocol,
+        summary_metadata_factory: SummaryMetadataFactoryProtocol,
         ) -> SignatureSummary | None:
     """Extracts all the parameter-specific infos you need to create a
     signature object (including the retval), combining both the actual
@@ -636,9 +635,9 @@ def _make_signature(  # noqa: PLR0913
             **normalized_annotation.config_params}
         effective_config = DocnoteConfig(**combined_params)
 
-        param_metadata = desc_metadata_factory(
+        param_metadata = summary_metadata_factory(
             classification=None,
-            desc_class=ParamSummary,
+            summary_class=ParamSummary,
             crossref=param_crossref,
             annotateds=normalized_annotation.annotateds,
             metadata=effective_config.metadata or {})
@@ -673,9 +672,9 @@ def _make_signature(  # noqa: PLR0913
         **normalized_retval_annotation.config_params}
     retval_effective_config = DocnoteConfig(**combined_params)
 
-    retval_metadata = desc_metadata_factory(
+    retval_metadata = summary_metadata_factory(
         classification=None,
-        desc_class=RetvalSummary,
+        summary_class=RetvalSummary,
         crossref=retval_crossref,
         annotateds=normalized_retval_annotation.annotateds,
         metadata=retval_effective_config.metadata or {})
@@ -684,9 +683,9 @@ def _make_signature(  # noqa: PLR0913
     retval_metadata.crossref_namespace = signature_namespace
     retval_metadata.canonical_module = canonical_module
 
-    signature_metadata = desc_metadata_factory(
+    signature_metadata = summary_metadata_factory(
         classification=None,
-        desc_class=SignatureSummary,
+        summary_class=SignatureSummary,
         crossref=signature_crossref,
         annotateds=(),
         metadata=signature_config.metadata or {})

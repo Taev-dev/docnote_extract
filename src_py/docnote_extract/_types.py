@@ -104,13 +104,10 @@ class ObjClassification:
             is_member_descriptor=inspect.ismemberdescriptor(obj),
             is_callable=callable(obj))
 
-    def get_desc_class(self) -> type[SummaryBase] | None:
-        """Given the current classification, returns which description
+    def get_summary_class(self) -> type[SummaryBase]:
+        """Given the current classification, returns which summary
         type should be applied to the object, so that the caller can
-        then create a description instance for it.
-
-        Returns None if no description should be created -- for example,
-        if the object was a reftype.
+        then create a summary instance for it.
         """
         if self.is_reftype:
             if self.has_traversals:
@@ -279,7 +276,7 @@ class SummaryMetadataFactoryProtocol[T: SummaryMetadataProtocol](Protocol):
             self,
             *,
             classification: ObjClassification | None,
-            desc_class: type[SummaryBase],
+            summary_class: type[SummaryBase],
             crossref: Crossref | None,
             annotateds: Annotated[
                 tuple[LazyResolvingValue, ...],
@@ -298,9 +295,9 @@ class SummaryMetadataFactoryProtocol[T: SummaryMetadataProtocol](Protocol):
                     'Any metadata defined via ``DocnoteConfig`` attachments.'
                 )],
             ) -> T:
-        """A description metadata factory function must be passed to
+        """A summary metadata factory function must be passed to
         ``summarize_module`` to create the individual metadata instances
-        to include in the description objects.
+        to include in the summary objects.
         """
         ...
 
@@ -314,7 +311,7 @@ class _SummaryBaseProtocol[T: SummaryMetadataProtocol](Protocol):
         ...
 
     def flatten(self) -> Iterator[SummaryBase[T]]:
-        """Yield all of the nodes at the description, recursively,
+        """Yield all of the nodes at the summary, recursively,
         in a depth-first fashion. Primarily intended for updating
         metadata values based on filters.
 
@@ -401,7 +398,7 @@ class CrossrefSummary[T: SummaryMetadataProtocol](SummaryBase[T]):
 
     def traverse(self, traversal: CrossrefTraversal) -> SummaryBase[T]:
         raise LookupError(
-            'Crossref descriptions have no traversals', self, traversal)
+            'Crossref summaries have no traversals', self, traversal)
 
     def flatten(self) -> Iterator[SummaryBase[T]]:
         yield self
@@ -429,7 +426,7 @@ class VariableSummary[T: SummaryMetadataProtocol](SummaryBase[T]):
 
     def traverse(self, traversal: CrossrefTraversal) -> SummaryBase[T]:
         raise LookupError(
-            'Variable descriptions have no traversals', self, traversal)
+            'Variable summaries have no traversals', self, traversal)
 
     def flatten(self) -> Iterator[SummaryBase[T]]:
         yield self
@@ -601,7 +598,7 @@ class ParamSummary[T: SummaryMetadataProtocol](SummaryBase[T]):
 
     def traverse(self, traversal: CrossrefTraversal) -> SummaryBase[T]:
         raise LookupError(
-            'Param descriptions have no traversals', self, traversal)
+            'Param summaries have no traversals', self, traversal)
 
     def flatten(self) -> Iterator[SummaryBase[T]]:
         yield self
@@ -623,7 +620,7 @@ class RetvalSummary[T: SummaryMetadataProtocol](SummaryBase[T]):
 
     def traverse(self, traversal: CrossrefTraversal) -> SummaryBase[T]:
         raise LookupError(
-            'Retval descriptions have no traversals', self, traversal)
+            'Retval summaries have no traversals', self, traversal)
 
     def flatten(self) -> Iterator[SummaryBase[T]]:
         yield self

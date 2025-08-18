@@ -120,8 +120,8 @@ def _set_canonical_ownership(
         ) -> None:
     module_member = module_summary / GetattrTraversal(toplevel_name)
 
-    for desc in module_member.flatten():
-        desc.metadata.disowned = disowned
+    for summary in module_member.flatten():
+        summary.metadata.disowned = disowned
 
 
 def filter_private_summaries(module_summary: ModuleSummary) -> None:
