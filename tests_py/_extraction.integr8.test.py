@@ -14,7 +14,6 @@ from docnote_extract._extraction import _ExtractionFinderLoader
 from docnote_extract._extraction import _ExtractionPhase
 from docnote_extract._extraction import _wrapped_tracking_getattr
 from docnote_extract._extraction import is_wrapped_tracking_module
-from docnote_extract._extraction import mark_special_reftype
 
 import docnote_extract_testpkg
 import docnote_extract_testpkg._hand_rolled
@@ -134,17 +133,16 @@ class TestExtractionFinderLoader:
         module, modules that create classes using imported third-party
         metaclasses must still be inspectable.
         """
-        # Don't forget to mark this, or we won't do anything!
-        with mark_special_reftype({
-            Crossref(
-                module_name='docnote_extract_testutils.for_handrolled',
-                toplevel_name='ThirdpartyMetaclass'): CrossrefMarker.METACLASS
-        }):
-            floader = _ExtractionFinderLoader(
-                frozenset({'docnote_extract_testpkg'}),
-                nostub_packages=frozenset({'pytest'}),)
+        floader = _ExtractionFinderLoader(
+            frozenset({'docnote_extract_testpkg'}),
+            nostub_packages=frozenset({'pytest'}),
+            special_reftype_markers={
+                Crossref(
+                    module_name='docnote_extract_testutils.for_handrolled',
+                    toplevel_name='ThirdpartyMetaclass'):
+                CrossrefMarker.METACLASS})
 
-            retval = floader.discover_and_extract()
+        retval = floader.discover_and_extract()
 
         to_inspect = retval[
             'docnote_extract_testpkg._hand_rolled.imports_3p_metaclass']

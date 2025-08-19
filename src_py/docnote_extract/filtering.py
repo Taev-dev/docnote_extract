@@ -1,20 +1,11 @@
 from __future__ import annotations
 
 import sys
-from collections.abc import Callable
 
 from docnote_extract._crossrefs import GetattrTraversal
-from docnote_extract._extraction import ModulePostExtraction
 from docnote_extract._module_tree import ConfiguredModuleTreeNode
 from docnote_extract._module_tree import SummaryTreeNode
 from docnote_extract._types import ModuleSummary
-from docnote_extract.normalization import NormalizedObj
-
-type ModuleObjectFilter = Callable[
-    [ModulePostExtraction, dict[str, NormalizedObj]],
-    dict[str, NormalizedObj]]
-type ObjectFilter = Callable[
-    [dict[str, NormalizedObj]], dict[str, NormalizedObj]]
 
 
 def filter_module_summaries(
@@ -23,7 +14,8 @@ def filter_module_summaries(
         *,
         _forced_inclusion: bool | None = None
         ) -> None:
-    """Recursively walks the passed module tree, setting the
+    """Recursively walks the passed module tree, **starting from the
+    root node** of both the summary and configured trees, setting the
     ``to_document`` value on all module descriptions within the tree,
     but not any of the modules' members.
 

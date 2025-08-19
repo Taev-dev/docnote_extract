@@ -9,7 +9,7 @@ from docnote_extract._crossrefs import Crossref
 from docnote_extract._crossrefs import CrossrefMixin
 from docnote_extract._crossrefs import is_crossreffed
 from docnote_extract._extraction import _MODULE_TO_INSPECT
-from docnote_extract._extraction import _REFTYPE_MARKERS
+from docnote_extract._extraction import GLOBAL_REFTYPE_MARKERS
 from docnote_extract._extraction import CrossrefMarker
 from docnote_extract._extraction import _DelegatedLoaderState
 from docnote_extract._extraction import _ExtractionFinderLoader
@@ -18,7 +18,6 @@ from docnote_extract._extraction import _ExtractionPhase
 from docnote_extract._extraction import _stubbed_getattr
 from docnote_extract._extraction import _StubStrategy
 from docnote_extract._extraction import is_module_post_extraction
-from docnote_extract._extraction import mark_special_reftype
 
 import docnote_extract_testpkg
 from docnote_extract_testutils.fixtures import set_inspection
@@ -271,7 +270,10 @@ class TestStubbedGetattr:
         """Must return a metaclass reftype for any module:attr in the
         shared metaclass markers lookup.
         """
-        retval = _stubbed_getattr(module_name='configatron', name='ConfigMeta')
+        retval = _stubbed_getattr(
+            module_name='configatron',
+            name='ConfigMeta',
+            special_reftype_markers=GLOBAL_REFTYPE_MARKERS)
         assert isinstance(retval, type)
         assert issubclass(retval, type)
         assert not issubclass(retval, CrossrefMixin)
@@ -283,11 +285,12 @@ class TestStubbedGetattr:
         """Must return a metaclass reftype for any module:attr in the
         manual metaclass markers lookup.
         """
-        with mark_special_reftype(
-            {Crossref(module_name='foo', toplevel_name='Foo'):
-                CrossrefMarker.METACLASS}
-        ):
-            retval = _stubbed_getattr(module_name='foo', name='Foo')
+        retval = _stubbed_getattr(
+            module_name='foo',
+            name='Foo',
+            special_reftype_markers={
+                Crossref(module_name='foo', toplevel_name='Foo'):
+                CrossrefMarker.METACLASS})
         assert isinstance(retval, type)
         assert issubclass(retval, type)
         assert not issubclass(retval, CrossrefMixin)
@@ -299,57 +302,16 @@ class TestStubbedGetattr:
         """Must return a normal reftype for anything not marked as a
         metaclass.
         """
-        retval = _stubbed_getattr(module_name='foo', name='Foo')
+        retval = _stubbed_getattr(
+            module_name='foo',
+            name='Foo',
+            special_reftype_markers={})
         assert isinstance(retval, type)
         assert not issubclass(retval, type)
         assert issubclass(retval, CrossrefMixin)
         assert is_crossreffed(retval)
         assert retval._docnote_extract_metadata == Crossref(
             module_name='foo', toplevel_name='Foo')
-
-
-class TestMarkSpecialCrossref:
-
-    def test_both_forms(self):
-        """Both the context form and decorator form must work without
-        error. This ensures our documentation is correct.
-        """
-        with mark_special_reftype({}):
-            ...
-
-        @mark_special_reftype({})
-        def _():
-            ...
-
-        assert True
-
-    def test_adds_to_contextvar(self):
-        """The context manager must add the desired qualnames to the
-        context var. After exiting the context, the contextvar must be
-        reset.
-
-        This tests only the contextmanager form, since testing both
-        forms is more a test of contextlib than docnote_extract.
-        """
-        default_reftype_markers = _REFTYPE_MARKERS.get()
-        with mark_special_reftype(
-            {Crossref(module_name='foo', toplevel_name='Foo'):
-                CrossrefMarker.METACLASS}
-        ):
-            with mark_special_reftype({
-                Crossref(module_name='bar', toplevel_name='Bar'):
-                    CrossrefMarker.METACLASS,
-                Crossref(module_name='baz', toplevel_name='Baz'):
-                    CrossrefMarker.METACLASS,
-            }):
-                retval = _REFTYPE_MARKERS.get()
-
-        assert set(retval) == {
-            Crossref(module_name='foo', toplevel_name='Foo'),
-            Crossref(module_name='bar', toplevel_name='Bar'),
-            Crossref(module_name='baz', toplevel_name='Baz'),
-            *default_reftype_markers}
-        assert _REFTYPE_MARKERS.get() == default_reftype_markers
 
 
 def _check_for_hook() -> bool:

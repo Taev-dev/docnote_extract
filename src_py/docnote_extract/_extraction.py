@@ -73,11 +73,10 @@ class _StubStrategy(Enum):
     TRACK = 'track'
 
 
-_REFTYPE_MARKERS: ContextVar[dict[Crossref, CrossrefMarker]] = ContextVar(
-    '_REFTYPE_MARKERS', default={  # noqa: B039
-        Crossref(module_name='configatron', toplevel_name='ConfigMeta'):
-            CrossrefMarker.METACLASS
-    })
+GLOBAL_REFTYPE_MARKERS: dict[Crossref, CrossrefMarker] = {
+    Crossref(module_name='configatron', toplevel_name='ConfigMeta'):
+        CrossrefMarker.METACLASS,
+}
 
 
 class _ExtractionPhase(Enum):
@@ -99,46 +98,16 @@ class _ExtractionFinderLoader(Loader):
     firstparty_packages: frozenset[str]
 
     _: KW_ONLY
+
+    # See note in ``gather`` for explanations of these three config-able
+    # parameters
+    special_reftype_markers: dict[Crossref, CrossrefMarker] = field(
+        default_factory=dict)
     # Note: full module name
     nostub_firstparty_modules: frozenset[str] = field(
         default_factory=frozenset)
-
     # Note: root package, not individual modules
-    nostub_packages: Annotated[
-        frozenset[str],
-        Note('''Marking a package as nostub be used as an escape hatch to
-            force it to skip the import stubbing. This requires the package
-            to be installed within the virtualenv used for docs extraction.
-
-            Imports from nostub modules will still be tracked, so they usually
-            still provide identical or near-identical import metadata to
-            stubbed modules.
-
-            Note that this can only be done on a per-package (``foo``) and not
-            per-module (``foo.bar``) basis, since otherwise we'd need to
-            cascade dependency analysis into every third-party package with a
-            nostub module.
-
-            Use this if you run into problems with a particular dependency not
-            working with the import stubbing. The downsides are:
-            ++  docs extraction will take longer. If the module has import side
-                effects, that can be substantial
-            ++  depending on the specifics of the un-stubbed module, it can
-                result in a cascade of bypasses for its dependencies, and then
-                their dependencies, and so on
-            ++  it requires that module to be available within the virtualenv
-                used for docs generation
-            ++  you may run into issues with ``if typing.TYPE_CHECKING`` blocks
-            ++  you can very quickly run into issues with traversals. This can,
-                for example, cause problems with references to imported
-                ``Enum`` members
-
-            In short, you should avoid marking packages as ``nostub`` unless
-            you run into problems directly related to stubbing, which cannot be
-            solved by other, more precise, escape hatches (for example, using
-            ``mark_special_reftype`` to force a particular import to be a
-            metaclass- or decorator-compatible stub).''')
-    ] = field(default_factory=frozenset)
+    nostub_packages: frozenset[str] = field(default_factory=frozenset)
 
     module_stash_prehook: dict[str, ModuleType] = field(
         default_factory=dict, repr=False)
@@ -760,7 +729,9 @@ class _ExtractionFinderLoader(Loader):
         if loader_state.stub_strategy is _StubStrategy.STUB:
             logger.debug('Stubbing module: %s', module.__name__)
             module.__getattr__ = partial(
-                _stubbed_getattr, module_name=module.__name__)
+                _stubbed_getattr,
+                module_name=module.__name__,
+                special_reftype_markers=self.special_reftype_markers)
             # Always set this to indicate that it has submodules. We can't
             # know this -- at least not for thirdparty stubs -- so we always
             # just set it.
@@ -829,6 +800,13 @@ class _ExtractionFinderLoader(Loader):
             module,
             MODULE_ATTRNAME_STUBSTRATEGY,
             loader_state.stub_strategy)
+
+    def __post_init__(self):
+        # Do this manually instead of via .update() so that we don't overwrite
+        # any explicit values given there
+        for crossref, marker in GLOBAL_REFTYPE_MARKERS.items():
+            if crossref not in self.special_reftype_markers:
+                self.special_reftype_markers[crossref] = marker
 
 
 def _clone_import_attrs(
@@ -965,7 +943,11 @@ def _wrapped_tracking_getattr(
     return src_object
 
 
-def _stubbed_getattr(name: str, *, module_name: str):
+def _stubbed_getattr(
+        name: str,
+        *,
+        module_name: str,
+        special_reftype_markers: dict[Crossref, CrossrefMarker]):
     """Okay, yes, we could create our own module type. Alternatively,
     we could just inject a module.__getattr__!
 
@@ -985,9 +967,8 @@ def _stubbed_getattr(name: str, *, module_name: str):
         return []
 
     to_reference = Crossref(module_name=module_name, toplevel_name=name)
-    special_markers = _REFTYPE_MARKERS.get()
 
-    special_reftype = special_markers.get(to_reference)
+    special_reftype = special_reftype_markers.get(to_reference)
     if special_reftype is None:
         logger.debug('Returning normal reftype for %s', to_reference)
         return make_crossreffed(module=module_name, name=name)
@@ -1002,32 +983,6 @@ def _stubbed_getattr(name: str, *, module_name: str):
         # of the current code push to just a refactor.
         raise NotImplementedError(
             'Other special metaclass reftypes not yet supported.')
-
-
-@contextmanager
-def mark_special_reftype(markers: dict[Crossref, CrossrefMarker]):
-    """This contextmanager/decorator can be used as an escape hatch to
-    force the import hook to create a special ``Crossref`` instance that
-    can, for example, be used as a metaclass. This allows you to
-    continue to use import stubs, even when you depend on (or yourself
-    author) libraries that make use of metaprogramming techniques that
-    would otherwise break reftypes.
-    """
-    for ref in markers:
-        if ref.traversals:
-            # The problem here is that we need to update the whole reftype
-            # creation process. This needs to get injected right at the call
-            # to ``make_crossreffed`` if we're going to support traversals,
-            # or something. It gets complicated quickly.
-            raise NotImplementedError(
-                'Traversals not yet supported for special reftypes.')
-
-    stacked_markers = {**_REFTYPE_MARKERS.get(), **markers}
-    ctx_token = _REFTYPE_MARKERS.set(stacked_markers)
-    try:
-        yield
-    finally:
-        _REFTYPE_MARKERS.reset(ctx_token)
 
 
 def is_wrapped_tracking_module(
