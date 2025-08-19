@@ -116,6 +116,10 @@ class SummaryMetadata(SummaryMetadataProtocol):
             ) -> SummaryMetadata:
         return cls()
 
+    @property
+    def included(self) -> bool:
+        return self.to_document and not self.disowned
+
 
 def summarize_module[T: SummaryMetadataProtocol](
         module: ModulePostExtraction,

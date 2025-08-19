@@ -14,6 +14,7 @@ from docnote import DocnoteConfig
 from docnote import Note
 
 from docnote_extract._types import ModuleSummary
+from docnote_extract._types import SummaryMetadataProtocol
 from docnote_extract._utils import coerce_config
 from docnote_extract._utils import validate_config
 
@@ -177,9 +178,9 @@ class ConfiguredModuleTreeNode(ModuleTreeNode):
 
 
 @dataclass(slots=True, frozen=True)
-class SummaryTreeNode(ModuleTreeNode):
+class SummaryTreeNode[T: SummaryMetadataProtocol](ModuleTreeNode):
     _: KW_ONLY
-    module_summary: ModuleSummary = field(compare=False, repr=False)
+    module_summary: ModuleSummary[T] = field(compare=False, repr=False)
     to_document: Annotated[
             bool | None,
             Note('''This is the value determined during filtering for whether
@@ -198,8 +199,8 @@ class SummaryTreeNode(ModuleTreeNode):
     def from_configured_module_tree(
             cls,
             configured_tree_node: ConfiguredModuleTreeNode,
-            summary_lookup: dict[str, ModuleSummary]
-            ) -> SummaryTreeNode:
+            summary_lookup: dict[str, ModuleSummary[T]]
+            ) -> SummaryTreeNode[T]:
         """Uses a ``{module_name: module_summary}`` lookup to
         recursively convert a single``ConfiguredModuleTreeNode``
         root node into a ``SummaryTreeNode`` instance.
@@ -210,7 +211,7 @@ class SummaryTreeNode(ModuleTreeNode):
                 kwargs[dc_field.name] = getattr(
                     configured_tree_node, dc_field.name)
 
-        children = {
+        children: dict[str, SummaryTreeNode[T]] = {
             name: cls.from_configured_module_tree(node, summary_lookup)
             for name, node in configured_tree_node.children.items()}
 
