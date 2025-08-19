@@ -320,7 +320,7 @@ class _SummaryBaseProtocol[T: SummaryMetadataProtocol](Protocol):
         ...
 
 
-type _NamespaceMemberSummary[T: SummaryMetadataProtocol] = (
+type NamespaceMemberSummary[T: SummaryMetadataProtocol] = (
     ClassSummary[T]
     | VariableSummary[T]
     | CallableSummary[T]
@@ -350,10 +350,10 @@ class ModuleSummary[T: SummaryMetadataProtocol](SummaryBase[T]):
     name: Annotated[str, Note('The module fullname, ex ``foo.bar.baz``.')]
     dunder_all: frozenset[str] | None
     docstring: DocText | None
-    members: frozenset[_NamespaceMemberSummary[T]]
+    members: frozenset[NamespaceMemberSummary[T]]
 
     _member_lookup: \
-        dict[CrossrefTraversal, _NamespaceMemberSummary[T]] = field(
+        dict[CrossrefTraversal, NamespaceMemberSummary[T]] = field(
             default_factory=dict, repr=False, init=False, compare=False)
 
     def __post_init__(self):
@@ -444,10 +444,10 @@ class ClassSummary[T: SummaryMetadataProtocol](SummaryBase[T]):
             on the class itself. Implicit metaclasses inherited from base
             classes will not be detected.''')]
     bases: tuple[TypeSpec, ...]
-    members: frozenset[_NamespaceMemberSummary[T]]
+    members: frozenset[NamespaceMemberSummary[T]]
 
     _member_lookup: \
-        dict[CrossrefTraversal, _NamespaceMemberSummary[T]] = field(
+        dict[CrossrefTraversal, NamespaceMemberSummary[T]] = field(
             default_factory=dict, repr=False, init=False, compare=False)
 
     def __post_init__(self):

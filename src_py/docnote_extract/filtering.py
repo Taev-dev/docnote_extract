@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import logging
 import sys
 
 from docnote_extract._crossrefs import GetattrTraversal
 from docnote_extract._module_tree import ConfiguredModuleTreeNode
 from docnote_extract._module_tree import SummaryTreeNode
 from docnote_extract._types import ModuleSummary
+
+logger = logging.getLogger(__name__)
 
 
 def filter_module_summaries(
@@ -135,8 +138,13 @@ def filter_private_summaries(module_summary: ModuleSummary) -> None:
             continue
 
         name: str | None = getattr(summary, 'name', None)
-        extracted_inclusion = summary.metadata.extracted_inclusion
-        canonical_module = summary.metadata.canonical_module
+        try:
+            extracted_inclusion = summary.metadata.extracted_inclusion
+            canonical_module = summary.metadata.canonical_module
+        except AttributeError:
+            logger.error('Summary metadata not fully populated: %s', summary)
+            raise
+
         if extracted_inclusion is False:
             summary.metadata.to_document = False
 

@@ -8,6 +8,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Annotated
 from typing import Any
+from typing import Literal
 from typing import Protocol
 from typing import cast
 from typing import get_overloads
@@ -33,6 +34,7 @@ from docnote_extract._types import ClassSummary
 from docnote_extract._types import CrossrefSummary
 from docnote_extract._types import MethodType
 from docnote_extract._types import ModuleSummary
+from docnote_extract._types import NamespaceMemberSummary
 from docnote_extract._types import ObjClassification
 from docnote_extract._types import ParamStyle
 from docnote_extract._types import ParamSummary
@@ -132,49 +134,21 @@ def summarize_module[T: SummaryMetadataProtocol](
         module_name=module.__name__,
         toplevel_name=None)
     namespace = _prepare_attr_namespace(module_crossref, None, normalized_objs)
+    module_name = module.__name__
 
-    module_members = set()
+    module_members: set[NamespaceMemberSummary[T]] = set()
     for name, normalized_obj in normalized_objs.items():
-        classification = ObjClassification.from_obj(normalized_obj.obj_or_stub)
-        summary_class = classification.get_summary_class()
-        # This seems, at first glance, to be weird. Like, how can we have a
-        # module here? Except if you do ``import foo``... welp, now you have
-        # a module object!
-        if classification.is_module:
-            crossref = module_crossref / GetattrTraversal(name)
-            module_members.add(CrossrefSummary(
-                name=name,
-                crossref=crossref,
-                src_crossref=Crossref(
-                    module_name=normalized_obj.obj_or_stub.__name__,
-                    toplevel_name=None,
-                    traversals=()),
-                typespec=normalized_obj.typespec,
-                notes=textify_notes(
-                    normalized_obj.notes, normalized_obj.effective_config),
-                ordering_index=normalized_obj.effective_config.ordering_index,
-                child_groups=
-                    normalized_obj.effective_config.child_groups or (),
-                parent_group_name=
-                    normalized_obj.effective_config.parent_group_name,
-                metadata=summary_metadata_factory(
-                    classification=classification,
-                    summary_class=CrossrefSummary,
-                    crossref=crossref,
-                    annotateds=tuple(
-                        LazyResolvingValue.from_annotated(annotated)
-                        for annotated in normalized_obj.annotateds),
-                    metadata=normalized_obj.effective_config.metadata or {})))
-
-        elif summary_class is not None:
-            factory = _summary_factories[summary_class]
-            module_members.add(factory(
-                name,
-                namespace,
-                normalized_obj,
-                classification,
-                summary_metadata_factory=summary_metadata_factory,
-                module_globals=module.__dict__))
+        member_summary = _summarize_namespace_member(
+            module_name,
+            module.__dict__,
+            module_crossref,
+            namespace,
+            name,
+            normalized_obj,
+            summary_metadata_factory,
+            in_class=False)
+        if member_summary is not None:
+            module_members.add(member_summary)
 
     config = module_tree.find(module.__name__).effective_config
     metadata = summary_metadata_factory(
@@ -225,16 +199,16 @@ def create_crossref_summary(
         raise TypeError(
             'Impossible branch: re-export from non-reftype!', obj)
 
-    crossref = parent_crossref_namespace[name_in_parent]
+    crossref = parent_crossref_namespace.get(name_in_parent)
     metadata = summary_metadata_factory(
         classification=classification,
-        summary_class=ModuleSummary,
+        summary_class=CrossrefSummary,
         crossref=crossref,
         annotateds=tuple(
             LazyResolvingValue.from_annotated(annotated)
             for annotated in obj.annotateds),
         metadata=obj.effective_config.metadata or {})
-    metadata.include_in_docs_as_configured = \
+    metadata.extracted_inclusion = \
         obj.effective_config.include_in_docs
     metadata.crossref_namespace = parent_crossref_namespace
     metadata.canonical_module = (
@@ -269,26 +243,16 @@ def create_variable_summary(
     """
     src_obj = obj.obj_or_stub
 
-    # For this to be a VariableSummary and not a re-export, this must have
-    # traversals.
-    if is_crossreffed(src_obj):
-        # I'm punting on this for now just because I need to make progress
-        # and it's a huge can of worms. But one big challenge is going to
-        # be eg instances of an imported type.
-        raise NotImplementedError(
-            'Traversals not yet supported for crossref variables',
-            src_obj)
-
-    crossref = parent_crossref_namespace[name_in_parent]
+    crossref = parent_crossref_namespace.get(name_in_parent)
     metadata = summary_metadata_factory(
         classification=classification,
-        summary_class=ModuleSummary,
+        summary_class=VariableSummary,
         crossref=crossref,
         annotateds=tuple(
             LazyResolvingValue.from_annotated(annotated)
             for annotated in obj.annotateds),
         metadata=obj.effective_config.metadata or {})
-    metadata.include_in_docs_as_configured = \
+    metadata.extracted_inclusion = \
         obj.effective_config.include_in_docs
     metadata.crossref_namespace = parent_crossref_namespace
     metadata.canonical_module = (
@@ -299,7 +263,17 @@ def create_variable_summary(
     # object was a bare annotation (without a typespec?! weird), then
     # we can't do anything.
     if obj.typespec is None and src_obj is not Singleton.MISSING:
-        typespec = TypeSpec.from_typehint(type(src_obj))
+        if is_crossreffed(src_obj):
+            logger.warning(
+                'Type inference is not supported for crossreffed variables. '
+                + 'For a non-None typespec, you must explicitly declare the '
+                + 'type of %s', src_obj)
+            # I'm punting on this because it's a huge can of worms. For now,
+            # we don't support type inference here; you really MUST declare
+            # it as an explicit type
+            typespec = None
+        else:
+            typespec = TypeSpec.from_typehint(type(src_obj))
     else:
         typespec = obj.typespec
 
@@ -311,6 +285,114 @@ def create_variable_summary(
         ordering_index=obj.effective_config.ordering_index,
         child_groups=obj.effective_config.child_groups or (),
         parent_group_name=obj.effective_config.parent_group_name,
+        metadata=metadata)
+
+
+def _summarize_namespace_member[T: SummaryMetadataProtocol](  # noqa: PLR0913
+        module_name: str | Literal[Singleton.UNKNOWN] | None,
+        module_globals: dict[str, Any],
+        parent_crossref: Crossref | None,
+        parent_namespace: dict[str, Crossref],
+        attr_name: str,
+        normalized_obj: NormalizedObj,
+        summary_metadata_factory: SummaryMetadataFactoryProtocol[T],
+        *,
+        in_class: bool
+        ) -> NamespaceMemberSummary[T] | None:
+    """Given the member of a namespace (ie, either class or module),
+    creates a summary for that member.
+    """
+    classification = ObjClassification.from_obj(normalized_obj.obj_or_stub)
+    summary_class = classification.get_summary_class()
+    if parent_crossref is None:
+        crossref = None
+    else:
+        crossref = parent_crossref / GetattrTraversal(attr_name)
+
+    # This seems, at first glance, to be weird. Like, how can we have a
+    # module here? Except if you do ``import foo``... welp, now you have
+    # a module object!
+    if classification.is_module:
+        return _create_substitute_crossref_summary(
+            normalized_obj.obj_or_stub.__name__,
+            None,
+            attr_name,
+            crossref,
+            classification,
+            normalized_obj,
+            summary_metadata_factory)
+
+    # Note that this will have a false positive on some edge cases -- for
+    # example, if you said ``Class.foo = dict.get`` as an imperative mixin
+    # or something like that, we're not going to be able to figure that out.
+    # TODO: we need some kind of escape hatch for that scenario!
+    elif (
+        isinstance(module_name, str)
+        and isinstance(normalized_obj.canonical_module, str)
+        and module_name != normalized_obj.canonical_module
+    ):
+        return _create_substitute_crossref_summary(
+            normalized_obj.canonical_module,
+            normalized_obj.canonical_name,
+            attr_name,
+            crossref,
+            classification,
+            normalized_obj,
+            summary_metadata_factory)
+
+    elif summary_class is not None and issubclass(
+        summary_class,
+        ClassSummary | VariableSummary | CallableSummary | CrossrefSummary
+    ):
+        factory = _summary_factories[summary_class]
+        return factory(
+            attr_name,
+            parent_namespace,
+            normalized_obj,
+            classification,
+            summary_metadata_factory=summary_metadata_factory,
+            module_globals=module_globals,
+            in_class=in_class)
+
+
+def _create_substitute_crossref_summary[T: SummaryMetadataProtocol](
+        module_name: str,
+        toplevel_name: str | None | Literal[Singleton.UNKNOWN],
+        attr_name: str,
+        crossref: Crossref | None,
+        classification: ObjClassification,
+        normalized_obj: NormalizedObj,
+        summary_metadata_factory: SummaryMetadataFactoryProtocol[T],
+        ) -> CrossrefSummary:
+    if toplevel_name is Singleton.UNKNOWN:
+        toplevel_name = None
+
+    metadata = summary_metadata_factory(
+        classification=classification,
+        summary_class=CrossrefSummary,
+        crossref=crossref,
+        annotateds=tuple(
+            LazyResolvingValue.from_annotated(annotated)
+            for annotated in normalized_obj.annotateds),
+        metadata=normalized_obj.effective_config.metadata or {})
+    metadata.extracted_inclusion = \
+        normalized_obj.effective_config.include_in_docs
+    metadata.crossref_namespace = {}
+    metadata.canonical_module = module_name
+    return CrossrefSummary(
+        name=attr_name,
+        crossref=crossref,
+        src_crossref=Crossref(
+            module_name=module_name,
+            toplevel_name=toplevel_name,
+            traversals=()),
+        typespec=normalized_obj.typespec,
+        notes=textify_notes(
+            normalized_obj.notes, normalized_obj.effective_config),
+        ordering_index=normalized_obj.effective_config.ordering_index,
+        child_groups=normalized_obj.effective_config.child_groups or (),
+        parent_group_name=
+            normalized_obj.effective_config.parent_group_name,
         metadata=metadata)
 
 
@@ -327,7 +409,9 @@ def create_class_summary(
         ) -> ClassSummary:
     src_obj = cast(type, obj.obj_or_stub)
     config = obj.effective_config
-    crossref = parent_crossref_namespace[name_in_parent]
+    crossref = parent_crossref_namespace.get(name_in_parent)
+    logger.debug(
+        'Creating class summary for %s (%s)', name_in_parent, crossref)
     annotations = get_type_hints(
         src_obj, globalns=module_globals, include_extras=True)
     # Note that, especially in classes, it's extremely common to have
@@ -355,23 +439,17 @@ def create_class_summary(
             ClassSummary | VariableSummary | CallableSummary | CrossrefSummary
         ] = {}
     for name, normalized_obj in normalized_members.items():
-        classification = ObjClassification.from_obj(
-            normalized_obj.obj_or_stub)
-        summary_class = classification.get_summary_class()
-        if summary_class is not None and issubclass(
-            summary_class,
-            ClassSummary | VariableSummary | CallableSummary | CrossrefSummary
-        ):
-            factory = _summary_factories[summary_class]
-            namespace[name] = crossref / GetattrTraversal(name)
-            members[name] = factory(
-                name,
-                namespace,
-                normalized_obj,
-                classification,
-                module_globals=module_globals,
-                summary_metadata_factory=summary_metadata_factory,
-                in_class=True)
+        member_summary = _summarize_namespace_member(
+            obj.canonical_module,
+            module_globals,
+            crossref,
+            namespace,
+            name,
+            normalized_obj,
+            summary_metadata_factory,
+            in_class=True)
+        if member_summary is not None:
+            members[name] = member_summary
 
     if has_crossreffed_base(src_obj):
         bases = src_obj._docnote_extract_base_classes
@@ -389,13 +467,13 @@ def create_class_summary(
 
     metadata = summary_metadata_factory(
         classification=classification,
-        summary_class=ModuleSummary,
+        summary_class=ClassSummary,
         crossref=crossref,
         annotateds=tuple(
             LazyResolvingValue.from_annotated(annotated)
             for annotated in obj.annotateds),
         metadata=config.metadata or {})
-    metadata.include_in_docs_as_configured = \
+    metadata.extracted_inclusion = \
         obj.effective_config.include_in_docs
     metadata.crossref_namespace = namespace
     metadata.canonical_module = (
@@ -430,7 +508,7 @@ def create_callable_summary(
     """Given an object and its classification, construct a
     summary instance, populating it with any required children.
     """
-    crossref = parent_crossref_namespace[name_in_parent]
+    crossref = parent_crossref_namespace.get(name_in_parent)
     src_obj = obj.obj_or_stub
     canonical_module = (
         obj.canonical_module
@@ -455,7 +533,7 @@ def create_callable_summary(
     except AttributeError:
         logger.debug(
             'Failed to check overloads for %s. This is usually because it was '
-            + 'a stlib object with a __module__ attribute, ex '
+            + 'a stlib object without a __module__ attribute, ex '
             + '``Decimal.__repr__``; however, this might indicate a bug.',
             src_obj)
         overloads = []
@@ -481,7 +559,7 @@ def create_callable_summary(
             # incorrectly overlap with the no-overload traversal, and
             # because it would be redundant with all other un-indexed
             # overloads.
-            if overload_config.ordering_index is None:
+            if overload_config.ordering_index is None or crossref is None:
                 signature_crossref = None
                 namespace_expansion_key = ''
             else:
@@ -515,7 +593,10 @@ def create_callable_summary(
     # upon the overloads for the signature, and treat the implementation as
     # irrelevant for documentation purposes.
     else:
-        signature_crossref = crossref / SignatureTraversal(None)
+        signature_crossref = (
+            crossref / SignatureTraversal(None)
+            if crossref is not None
+            else None)
         signature = _make_signature(
             parent_crossref_namespace,
             src_obj,
@@ -525,20 +606,20 @@ def create_callable_summary(
             parent_effective_config=obj.effective_config,
             module_globals=module_globals,
             summary_metadata_factory=summary_metadata_factory)
-        if signature is not None:
+        if signature is not None and signature_crossref is not None:
             signatures.append(signature)
             namespace_expansion['__signature_impl__'] = signature_crossref
 
-    crossref = parent_crossref_namespace[name_in_parent]
+    crossref = parent_crossref_namespace.get(name_in_parent)
     metadata = summary_metadata_factory(
         classification=classification,
-        summary_class=ModuleSummary,
+        summary_class=CallableSummary,
         crossref=crossref,
         annotateds=tuple(
             LazyResolvingValue.from_annotated(annotated)
             for annotated in obj.annotateds),
         metadata=obj.effective_config.metadata or {})
-    metadata.include_in_docs_as_configured = \
+    metadata.extracted_inclusion = \
         obj.effective_config.include_in_docs
     metadata.crossref_namespace = {
         **parent_crossref_namespace, **namespace_expansion}
@@ -641,7 +722,7 @@ def _make_signature(  # noqa: PLR0913
             crossref=param_crossref,
             annotateds=normalized_annotation.annotateds,
             metadata=effective_config.metadata or {})
-        param_metadata.include_in_docs_as_configured = \
+        param_metadata.extracted_inclusion = \
             effective_config.include_in_docs
         param_metadata.crossref_namespace = signature_namespace
         param_metadata.canonical_module = canonical_module
@@ -678,7 +759,7 @@ def _make_signature(  # noqa: PLR0913
         crossref=retval_crossref,
         annotateds=normalized_retval_annotation.annotateds,
         metadata=retval_effective_config.metadata or {})
-    retval_metadata.include_in_docs_as_configured = \
+    retval_metadata.extracted_inclusion = \
         retval_effective_config.include_in_docs
     retval_metadata.crossref_namespace = signature_namespace
     retval_metadata.canonical_module = canonical_module
@@ -689,7 +770,7 @@ def _make_signature(  # noqa: PLR0913
         crossref=signature_crossref,
         annotateds=(),
         metadata=signature_config.metadata or {})
-    signature_metadata.include_in_docs_as_configured = \
+    signature_metadata.extracted_inclusion = \
         signature_config.include_in_docs
     signature_metadata.crossref_namespace = signature_namespace
     signature_metadata.canonical_module = canonical_module
