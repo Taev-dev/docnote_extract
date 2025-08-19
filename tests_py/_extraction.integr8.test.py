@@ -5,11 +5,12 @@ import sys
 from importlib.machinery import ModuleSpec
 from unittest.mock import patch
 
+from docnote import ReftypeMarker
+
 from docnote_extract._crossrefs import Crossref
 from docnote_extract._crossrefs import has_crossreffed_base
 from docnote_extract._crossrefs import has_crossreffed_metaclass
 from docnote_extract._crossrefs import is_crossreffed
-from docnote_extract._extraction import CrossrefMarker
 from docnote_extract._extraction import _ExtractionFinderLoader
 from docnote_extract._extraction import _ExtractionPhase
 from docnote_extract._extraction import _wrapped_tracking_getattr
@@ -128,7 +129,7 @@ class TestExtractionFinderLoader:
         'docnote_extract_testpkg._hand_rolled',
         'docnote_extract_testpkg._hand_rolled.imports_3p_metaclass'])
     @purge_cached_testpkg_modules
-    def test_inspection_works_with_metaclasses(self):
+    def test_inspection_works_with_3pmetaclasses(self):
         """After installing the import hook and while inspecting a
         module, modules that create classes using imported third-party
         metaclasses must still be inspectable.
@@ -140,7 +141,7 @@ class TestExtractionFinderLoader:
                 Crossref(
                     module_name='docnote_extract_testutils.for_handrolled',
                     toplevel_name='ThirdpartyMetaclass'):
-                CrossrefMarker.METACLASS})
+                ReftypeMarker.METACLASS})
 
         retval = floader.discover_and_extract()
 
@@ -149,6 +150,30 @@ class TestExtractionFinderLoader:
         assert not is_crossreffed(to_inspect)
         assert not is_crossreffed(to_inspect.Uses3pMetaclass)
         assert has_crossreffed_metaclass(to_inspect.Uses3pMetaclass)
+
+    @mocked_extraction_discovery([
+        'docnote_extract_testpkg',
+        'docnote_extract_testpkg._hand_rolled',
+        'docnote_extract_testpkg._hand_rolled.defines_1p_metaclass',
+        'docnote_extract_testpkg._hand_rolled.imports_1p_metaclass'])
+    @purge_cached_testpkg_modules
+    def test_inspection_works_with_1pmetaclasses(self):
+        """After installing the import hook and while inspecting a
+        module, modules that create classes using imported first-party
+        metaclasses declared with docnote configs must still be
+        inspectable.
+        """
+        floader = _ExtractionFinderLoader(
+            frozenset({'docnote_extract_testpkg'}),
+            nostub_packages=frozenset({'pytest'}))
+
+        retval = floader.discover_and_extract()
+
+        to_inspect = retval[
+            'docnote_extract_testpkg._hand_rolled.imports_1p_metaclass']
+        assert not is_crossreffed(to_inspect)
+        assert not is_crossreffed(to_inspect.Uses1pMetaclass)
+        assert has_crossreffed_metaclass(to_inspect.Uses1pMetaclass)
 
     @mocked_extraction_discovery([
         'docnote_extract_testpkg',

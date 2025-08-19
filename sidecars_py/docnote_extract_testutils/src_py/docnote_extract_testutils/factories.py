@@ -10,9 +10,10 @@ def fake_discover_factory(module_names: list[str]):
     actually importing the modules.
     """
     def fake_discover_all_modules(*args, **kwargs):
+        retval = {}
         for module_name in module_names:
-            importlib.import_module(module_name)
+            retval[module_name] = importlib.import_module(module_name)
 
-        return module_names
+        return retval
 
     return fake_discover_all_modules

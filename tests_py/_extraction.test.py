@@ -4,13 +4,13 @@ from types import ModuleType
 from unittest.mock import patch
 
 import pytest
+from docnote import ReftypeMarker
 
 from docnote_extract._crossrefs import Crossref
 from docnote_extract._crossrefs import CrossrefMixin
 from docnote_extract._crossrefs import is_crossreffed
 from docnote_extract._extraction import _MODULE_TO_INSPECT
 from docnote_extract._extraction import GLOBAL_REFTYPE_MARKERS
-from docnote_extract._extraction import CrossrefMarker
 from docnote_extract._extraction import _DelegatedLoaderState
 from docnote_extract._extraction import _ExtractionFinderLoader
 from docnote_extract._extraction import _ExtractionLoaderState
@@ -290,7 +290,7 @@ class TestStubbedGetattr:
             name='Foo',
             special_reftype_markers={
                 Crossref(module_name='foo', toplevel_name='Foo'):
-                CrossrefMarker.METACLASS})
+                ReftypeMarker.METACLASS})
         assert isinstance(retval, type)
         assert issubclass(retval, type)
         assert not issubclass(retval, CrossrefMixin)

@@ -3,16 +3,27 @@ packages to recursively find all their modules.
 """
 from __future__ import annotations
 
+import inspect
 import logging
+from collections.abc import Iterable
 from importlib import import_module
 from pkgutil import iter_modules
 from types import ModuleType
+from typing import cast
+
+from docnote import DOCNOTE_CONFIG_ATTR
+from docnote import DocnoteConfig
+from docnote import ReftypeMarker
+
+from docnote_extract._crossrefs import Crossref
+from docnote_extract._crossrefs import GetattrTraversal
+from docnote_extract._crossrefs import is_crossreffed
 
 logger = logging.getLogger(__name__)
 
 
 def discover_all_modules(
-        *root_packages: str
+        root_packages: Iterable[str]
         ) -> dict[str, ModuleType]:
     """Recursively imports all of the modules under the passed
     ``root_packages``. Returns the loaded modules.
@@ -94,3 +105,81 @@ def eager_import_submodules(
             loaded_modules=loaded_modules)
 
     return loaded_modules
+
+
+def find_special_reftypes(
+        modules: Iterable[ModuleType]
+        ) -> dict[Crossref, ReftypeMarker]:
+    """Exhaustively inspects modules (via getattr traversals) for any
+    marked special reftypes.
+
+    Note that this relies upon the fact that special reftypes **must**
+    be declared via decorator (since that's the only way to attach
+    configs to classes and functions, which are the only things that
+    can become special reftypes).
+    """
+    retval: dict[Crossref, ReftypeMarker] = {}
+    for module in modules:
+        module_name = module.__name__
+        for name, obj in module.__dict__.items():
+            toplevel_crossref = Crossref(
+                module_name=module_name,
+                toplevel_name=name,
+                traversals=())
+            _find_special_reftypes_recursive(
+                module_name, obj, toplevel_crossref, retval)
+
+    return retval
+
+
+def _find_special_reftypes_recursive(
+        module_name: str,
+        obj: object,
+        crossref: Crossref,
+        lookup: dict[Crossref, ReftypeMarker],
+        *,
+        _recursion_guard: set[int] | None = None
+        ) -> None:
+    """Performs a recursive search for special reftypes, adding any
+    found ones in-place to the passed lookup.
+    """
+    if _recursion_guard is None:
+        recursion_guard = set()
+    else:
+        recursion_guard = _recursion_guard
+
+    # This is a **crucially** important performance improvement; otherwise,
+    # everything proceeds GLACIALLY and consumes a ton of memory, as we
+    # recursively check like literally the entirety of everything.
+    # Seriously, this is the difference between tests passing in less than a
+    # second, and each test taking several seconds. It's a big deal.
+    if getattr(obj, '__module__', None) != module_name:
+        return
+
+    # This prevents infinite recursion on anything that is self-referential;
+    # keep in mind that this exists even in the stdlib, because the language
+    # itself makes use of this.
+    obj_id = id(obj)
+    if obj_id in recursion_guard:
+        return
+    else:
+        recursion_guard.add(obj_id)
+
+    if hasattr(obj, DOCNOTE_CONFIG_ATTR):
+        decorated_config = getattr(obj, DOCNOTE_CONFIG_ATTR)
+
+        # Unlike in normalization, this is probably unnecessary, but... better
+        # safe than sorry.
+        if not is_crossreffed(decorated_config):
+            decorated_config = cast(DocnoteConfig, decorated_config)
+            if decorated_config.mark_special_reftype is not None:
+                lookup[crossref] = decorated_config.mark_special_reftype
+
+    for attr_name, attr_obj in inspect.getmembers_static(obj):
+        child_crossref = crossref / GetattrTraversal(attr_name)
+        _find_special_reftypes_recursive(
+            module_name,
+            attr_obj,
+            child_crossref,
+            lookup,
+            _recursion_guard=recursion_guard)

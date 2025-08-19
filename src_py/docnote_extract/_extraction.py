@@ -25,6 +25,7 @@ from typing import TypeGuard
 from typing import cast
 
 from docnote import Note
+from docnote import ReftypeMarker
 
 from docnote_extract._crossrefs import Crossref
 from docnote_extract._crossrefs import make_crossreffed
@@ -32,6 +33,7 @@ from docnote_extract._crossrefs import make_metaclass_crossreffed
 from docnote_extract._module_tree import ModuleTreeNode
 from docnote_extract._types import Singleton
 from docnote_extract.discovery import discover_all_modules
+from docnote_extract.discovery import find_special_reftypes
 
 type TrackingRegistry = dict[int, tuple[str, str] | None]
 UNPURGEABLE_MODULES: Annotated[
@@ -59,11 +61,6 @@ MODULE_ATTRNAME_STUBSTRATEGY = '_docnote_extract_stub_strat'
 logger = logging.getLogger(__name__)
 
 
-class CrossrefMarker(Enum):
-    METACLASS = 'metaclass'
-    DECORATOR = 'decorator'
-
-
 class _StubStrategy(Enum):
     """Slightly different than extraction phase, this determines what
     we're going to do when we get to later steps in the import process.
@@ -73,9 +70,9 @@ class _StubStrategy(Enum):
     TRACK = 'track'
 
 
-GLOBAL_REFTYPE_MARKERS: dict[Crossref, CrossrefMarker] = {
+GLOBAL_REFTYPE_MARKERS: dict[Crossref, ReftypeMarker] = {
     Crossref(module_name='configatron', toplevel_name='ConfigMeta'):
-        CrossrefMarker.METACLASS,
+        ReftypeMarker.METACLASS,
 }
 
 
@@ -101,7 +98,7 @@ class _ExtractionFinderLoader(Loader):
 
     # See note in ``gather`` for explanations of these three config-able
     # parameters
-    special_reftype_markers: dict[Crossref, CrossrefMarker] = field(
+    special_reftype_markers: dict[Crossref, ReftypeMarker] = field(
         default_factory=dict)
     # Note: full module name
     nostub_firstparty_modules: frozenset[str] = field(
@@ -144,8 +141,10 @@ class _ExtractionFinderLoader(Loader):
             # versions of nostub- and firstparty modules, cleanup sys, and
             # move on to the next phase, where we use the raw modules.
             _EXTRACTION_PHASE.set(_ExtractionPhase.EXPLORATION)
-            firstparty_names = frozenset(
-                discover_all_modules(*self.firstparty_packages))
+            firstparty_modules = discover_all_modules(self.firstparty_packages)
+            self.special_reftype_markers.update(
+                find_special_reftypes(firstparty_modules.values()))
+            firstparty_names = frozenset(firstparty_modules)
             self._stash_firstparty_or_nostub_raw()
             # We need to clean up everything here because we'll be
             # transitioning into tracked modules instead of the raw ones
@@ -947,7 +946,7 @@ def _stubbed_getattr(
         name: str,
         *,
         module_name: str,
-        special_reftype_markers: dict[Crossref, CrossrefMarker]):
+        special_reftype_markers: dict[Crossref, ReftypeMarker]):
     """Okay, yes, we could create our own module type. Alternatively,
     we could just inject a module.__getattr__!
 
@@ -973,7 +972,7 @@ def _stubbed_getattr(
         logger.debug('Returning normal reftype for %s', to_reference)
         return make_crossreffed(module=module_name, name=name)
 
-    elif special_reftype is CrossrefMarker.METACLASS:
+    elif special_reftype is ReftypeMarker.METACLASS:
         logger.debug('Returning metaclass reftype for %s.', to_reference)
         return make_metaclass_crossreffed(module=module_name, name=name)
 
