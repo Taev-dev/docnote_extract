@@ -87,6 +87,8 @@ class TestFilterModuleSummaries:
                 {'baz': SummaryTreeNode(
                     'foo.bar.baz',
                     'baz',
+                    # For whatever reason, this fixes pyright
+                    {},
                     module_summary=ModuleSummary(
                         crossref=None,
                         ordering_index=None,
@@ -160,6 +162,8 @@ class TestFilterModuleSummaries:
                 {'_baz': SummaryTreeNode(
                     'foo.bar._baz',
                     '_baz',
+                    # For whatever reason, this fixes pyright
+                    {},
                     module_summary=ModuleSummary(
                         crossref=None,
                         ordering_index=None,
@@ -225,6 +229,8 @@ class TestFilterModuleSummaries:
                 {'baz': SummaryTreeNode(
                     'foo._bar.baz',
                     'baz',
+                    # For whatever reason, this fixes pyright
+                    {},
                     module_summary=ModuleSummary(
                         crossref=None,
                         ordering_index=None,
@@ -291,6 +297,8 @@ class TestFilterModuleSummaries:
                 {'baz': SummaryTreeNode(
                     'foo._bar.baz',
                     'baz',
+                    # For whatever reason, this fixes pyright
+                    {},
                     module_summary=ModuleSummary(
                         crossref=None,
                         ordering_index=None,
@@ -357,6 +365,8 @@ class TestFilterModuleSummaries:
                 {'baz': SummaryTreeNode(
                     'foo.bar.baz',
                     'baz',
+                    # For whatever reason, this fixes pyright
+                    {},
                     module_summary=ModuleSummary(
                         crossref=None,
                         ordering_index=None,
