@@ -133,6 +133,7 @@ class _ExtractionFinderLoader(Loader):
     def discover_and_extract(self) -> dict[str, ModulePostExtraction]:
         ctx_token = _EXTRACTION_PHASE.set(_ExtractionPhase.HOOKED)
         try:
+            logger.info('Stashing prehook modules and installing import hook.')
             self._stash_prehook_modules()
             self.install()
 
@@ -140,6 +141,7 @@ class _ExtractionFinderLoader(Loader):
             # possible modules needed for extraction. Then we stash the raw
             # versions of nostub- and firstparty modules, cleanup sys, and
             # move on to the next phase, where we use the raw modules.
+            logger.info('Starting exploration phase.')
             _EXTRACTION_PHASE.set(_ExtractionPhase.EXPLORATION)
             firstparty_modules = discover_all_modules(self.firstparty_packages)
             self.special_reftype_markers.update(
@@ -148,6 +150,7 @@ class _ExtractionFinderLoader(Loader):
             self._stash_firstparty_or_nostub_raw()
             # We need to clean up everything here because we'll be
             # transitioning into tracked modules instead of the raw ones
+            logger.info('Exploration done; cleaning up sys.modules.')
             self.cleanup_sys(self._get_all_dirty_modules())
 
             # We want to preemptively create tracking or stub versions of all
@@ -156,12 +159,16 @@ class _ExtractionFinderLoader(Loader):
             # We might not **need** all of these, but stubbing is quick (since
             # we don't need an exec), and this dramatically improves our
             # reliability.
+            logger.info('Starting preparation phase.')
             _EXTRACTION_PHASE.set(_ExtractionPhase.PREPARATION)
             self._prepare_firstparty_stubs_or_tracking(firstparty_names)
 
             # Clean everything one more time in case there were weird import
             # deps in the firstparty nostub modules
+            logger.info('Preparation done; cleaning up sys.modules.')
             self.cleanup_sys(self._get_all_dirty_modules())
+
+            logger.info('Starting extraction phase.')
             _EXTRACTION_PHASE.set(_ExtractionPhase.EXTRACTION)
 
             # Since extraction doesn't use imports to generate the extracted
@@ -173,10 +180,13 @@ class _ExtractionFinderLoader(Loader):
                 retval[module_name] = self.extract_firstparty(module_name)
 
             # Note that uninstall will handle final cleanup
+            logger.info('Extraction completed successfully.')
             return retval
 
         finally:
             try:
+                logger.info(
+                    'Uninstalling import hook and restoring prehook modules.')
                 self.uninstall()
             finally:
                 _EXTRACTION_PHASE.reset(ctx_token)
@@ -226,6 +236,9 @@ class _ExtractionFinderLoader(Loader):
                         is_firstparty=True,
                         delegated_module=nostub_module,
                         stub_strategy=_StubStrategy.INSPECT))
+                nostub_module_spec = getattr(nostub_module, '__spec__', None)
+                _clone_spec_attrs(nostub_module_spec, spec)
+
                 module_source = inspect.getsource(nostub_module)
                 extracted_module = cast(
                     ModulePostExtraction,
@@ -369,7 +382,7 @@ class _ExtractionFinderLoader(Loader):
                 package_name not in sys.stdlib_module_names
                 and package_name not in NOHOOK_PACKAGES
             ):
-                logger.info('Stashing prehook module %s', prehook_module_name)
+                logger.debug('Stashing prehook module %s', prehook_module_name)
 
                 # This is purely to save us needing to reimport the package
                 # to build out a raw package for use during the exploration
@@ -569,30 +582,18 @@ class _ExtractionFinderLoader(Loader):
             logger.debug('Returning STUB stub strategy for %s', fullname)
             stub_strategy = _StubStrategy.STUB
 
+        raw_module = self.module_stash_nostub_raw[fullname]
         spec = ModuleSpec(
             name=fullname,
             loader=self,
             loader_state=_DelegatedLoaderState(
                 fullname=fullname,
                 is_firstparty=base_package in self.firstparty_packages,
-                delegated_module=self.module_stash_nostub_raw[fullname],
+                delegated_module=raw_module,
                 stub_strategy=stub_strategy))
 
-        # As per stdlib docs on modulespecs, this indicates to the import
-        # system that this has submodules.
-        raw_module = self.module_stash_nostub_raw.get(fullname)
         raw_module_spec = getattr(raw_module, '__spec__', None)
-        # Can't use hasattr here; it will always exist!
-        if (
-            getattr(raw_module_spec, 'submodule_search_locations', None)
-            is not None
-        ):
-            # Delegated specs are always, by definition, a wrapper of some
-            # sorts, so we don't want to copy the value over, but we do want
-            # to make sure the existence of the attr is the same.
-            spec.submodule_search_locations = []
-        if (origin := getattr(raw_module_spec, 'origin', None)) is not None:
-            spec.origin = origin
+        _clone_spec_attrs(raw_module_spec, spec)
 
         return spec
 
@@ -669,7 +670,7 @@ class _ExtractionFinderLoader(Loader):
                 # the import system for delegation.
                 return None
 
-    def exec_module(self, module: ModuleType):
+    def exec_module(self, module: ModuleType):  # noqa: PLR0912
         """Ah, at long last: the final step of the import process.
         We have a module object ready to go and a spec with a
         ``loader_state``, which itself contains a ``stub_strategy``
@@ -726,15 +727,33 @@ class _ExtractionFinderLoader(Loader):
             return
 
         if loader_state.stub_strategy is _StubStrategy.STUB:
-            logger.debug('Stubbing module: %s', module.__name__)
+            module_name = module.__name__
+            logger.debug('Stubbing module: %s', module_name)
+
+            if (
+                (real_module := self.module_stash_nostub_raw.get(module_name))
+                is not None
+            ):
+                logger.debug(
+                    'Nostub module exists for %s; cloning import attrs',
+                    module_name)
+                _clone_import_attrs(real_module, spec, dest_module=module)
+
+            else:
+                logger.debug(
+                    'Lacking nostub module for %s. Assuming nonempty __path__',
+                    module_name)
+                # Always set this to indicate that it has submodules. We can't
+                # know this without a nostub module, so we always just set it.
+                # It we don't, attempts to import subpackages will break.
+                module.__path__ = []
+
+            # Do this after the above, otherwise the hasattrs while cloning
+            # import attrs will return false positives
             module.__getattr__ = partial(
                 _stubbed_getattr,
                 module_name=module.__name__,
                 special_reftype_markers=self.special_reftype_markers)
-            # Always set this to indicate that it has submodules. We can't
-            # know this -- at least not for thirdparty stubs -- so we always
-            # just set it.
-            module.__path__ = []
             self.module_stash_stubbed[loader_state.fullname] = module
 
         elif isinstance(loader_state, _DelegatedLoaderState):
@@ -832,6 +851,9 @@ def _clone_import_attrs(
         dest_module = ModuleType(src_module.__name__)
         dest_module.__loader__ = spec.loader
         dest_module.__spec__ = spec
+    elif not hasattr(dest_module, '__spec__'):
+        dest_module.__spec__ = spec
+        dest_module.__loader__ = spec.loader
 
     if hasattr(src_module, '__package__'):
         dest_module.__package__ = src_module.__package__
@@ -849,6 +871,44 @@ def _clone_import_attrs(
         delattr(dest_module, '__file__')
 
     return dest_module
+
+
+def _clone_spec_attrs(
+        src_spec: ModuleSpec | None,
+        dest_spec: ModuleSpec
+        ) -> None:
+    """This fixes up the importlib-specific spec attributes that are
+    critical to its internals:
+
+    ++  ``submodule_search_locations``:
+
+        This gets used by the import system to deduce whether or
+        not the file is a "package" in importlib parlance, ie, if
+        it has submodules or not. If you forget this, it will affect
+        the calculation of spec.parent, which will (in future
+        versions of python) break relative imports. (Currently it's
+        superceded by the module's ``__package__`` attribute, but
+        this behavior is deprecated).
+
+    ++  ``origin``:
+
+        I'm honestly not sure what this gets used for, but I've had
+        enough bad experiences with innards-fiddling inside of
+        importlib that I'd rather be safe than sorry.
+    """
+    # Can't use hasattr here; it will always exist (though might already
+    # be None)!
+    if (
+        getattr(src_spec, 'submodule_search_locations', None)
+        is not None
+    ):
+        # Delegated specs are always, by definition, a wrapper of some
+        # sorts, so we don't want to copy the value over, but we do want
+        # to make sure the existence of the attr is the same.
+        dest_spec.submodule_search_locations = []
+
+    if (origin := getattr(src_spec, 'origin', None)) is not None:
+        dest_spec.origin = origin
 
 
 @contextmanager
