@@ -167,3 +167,4 @@ node_modules
 # Vite
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
+.tmp/

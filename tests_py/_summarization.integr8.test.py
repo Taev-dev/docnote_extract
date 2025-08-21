@@ -1,15 +1,15 @@
 from __future__ import annotations
 
-from docnote_extract._crossrefs import GetattrTraversal
 from docnote_extract._extraction import _ExtractionFinderLoader
 from docnote_extract._module_tree import ConfiguredModuleTreeNode
 from docnote_extract._summarization import SummaryMetadata
 from docnote_extract._summarization import summarize_module
-from docnote_extract._types import CallableSummary
-from docnote_extract._types import ClassSummary
-from docnote_extract._types import ModuleSummary
-from docnote_extract._types import VariableSummary
+from docnote_extract.crossrefs import GetattrTraversal
 from docnote_extract.normalization import normalize_module_dict
+from docnote_extract.summaries import CallableSummary
+from docnote_extract.summaries import ClassSummary
+from docnote_extract.summaries import ModuleSummary
+from docnote_extract.summaries import VariableSummary
 
 from docnote_extract_testutils.fixtures import mocked_extraction_discovery
 from docnote_extract_testutils.fixtures import purge_cached_testpkg_modules

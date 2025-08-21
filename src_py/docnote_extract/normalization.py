@@ -19,14 +19,14 @@ from docnote import DocnoteConfig
 from docnote import DocnoteConfigParams
 from docnote import Note
 
-from docnote_extract._crossrefs import Crossref
-from docnote_extract._crossrefs import Crossreffed
-from docnote_extract._crossrefs import is_crossreffed
 from docnote_extract._extraction import ModulePostExtraction
 from docnote_extract._extraction import TrackingRegistry
 from docnote_extract._module_tree import ConfiguredModuleTreeNode
-from docnote_extract._types import Singleton
 from docnote_extract._utils import validate_config
+from docnote_extract.crossrefs import Crossref
+from docnote_extract.crossrefs import Crossreffed
+from docnote_extract.crossrefs import is_crossreffed
+from docnote_extract.summaries import Singleton
 
 logger = logging.getLogger(__name__)
 

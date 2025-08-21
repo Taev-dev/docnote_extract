@@ -13,10 +13,10 @@ from typing import Self
 from docnote import DocnoteConfig
 from docnote import Note
 
-from docnote_extract._types import ModuleSummary
-from docnote_extract._types import SummaryMetadataProtocol
 from docnote_extract._utils import coerce_config
 from docnote_extract._utils import validate_config
+from docnote_extract.summaries import ModuleSummary
+from docnote_extract.summaries import SummaryMetadataProtocol
 
 if typing.TYPE_CHECKING:
     from docnote_extract._extraction import ModulePostExtraction

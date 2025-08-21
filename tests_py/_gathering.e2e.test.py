@@ -4,8 +4,8 @@ from docnote import ReftypeMarker
 from docnote_extract import Docnotes
 from docnote_extract import SummaryMetadata
 from docnote_extract import gather
-from docnote_extract._crossrefs import Crossref
 from docnote_extract._module_tree import SummaryTreeNode
+from docnote_extract.crossrefs import Crossref
 
 
 @pytest.fixture(scope='module')

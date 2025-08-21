@@ -1,9 +1,9 @@
-from docnote_extract._crossrefs import Crossref
 from docnote_extract._gathering import Docnotes
 from docnote_extract._module_tree import SummaryTreeNode
 from docnote_extract._summarization import ModuleSummary
 from docnote_extract._summarization import SummaryMetadata
 from docnote_extract._summarization import VariableSummary
+from docnote_extract.crossrefs import Crossref
 
 
 class TestDocnotes:

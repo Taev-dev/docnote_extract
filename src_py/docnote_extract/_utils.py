@@ -12,8 +12,8 @@ from docnote import DocnoteConfigParams
 from docnote import Note
 
 from docnote_extract import KNOWN_MARKUP_LANGS
-from docnote_extract._types import DocText
 from docnote_extract.exceptions import InvalidConfig
+from docnote_extract.summaries import DocText
 
 if typing.TYPE_CHECKING:
     from docnote_extract._extraction import ModulePostExtraction

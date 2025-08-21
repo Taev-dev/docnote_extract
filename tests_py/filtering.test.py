@@ -6,14 +6,14 @@ from docnote import DocnoteConfig
 from docnote_extract._module_tree import ConfiguredModuleTreeNode
 from docnote_extract._module_tree import SummaryTreeNode
 from docnote_extract._summarization import SummaryMetadata
-from docnote_extract._types import ClassSummary
-from docnote_extract._types import ModuleSummary
-from docnote_extract._types import VariableSummary
 from docnote_extract.filtering import _conventionally_private
 from docnote_extract.filtering import _is_dunder
 from docnote_extract.filtering import filter_canonical_ownership
 from docnote_extract.filtering import filter_module_summaries
 from docnote_extract.filtering import filter_private_summaries
+from docnote_extract.summaries import ClassSummary
+from docnote_extract.summaries import ModuleSummary
+from docnote_extract.summaries import VariableSummary
 
 
 class TestFilterModuleSummaries:

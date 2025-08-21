@@ -3,10 +3,10 @@ from __future__ import annotations
 import logging
 import sys
 
-from docnote_extract._crossrefs import GetattrTraversal
 from docnote_extract._module_tree import ConfiguredModuleTreeNode
 from docnote_extract._module_tree import SummaryTreeNode
-from docnote_extract._types import ModuleSummary
+from docnote_extract.crossrefs import GetattrTraversal
+from docnote_extract.summaries import ModuleSummary
 
 logger = logging.getLogger(__name__)
 

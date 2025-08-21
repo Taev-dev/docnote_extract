@@ -27,13 +27,13 @@ from typing import cast
 from docnote import Note
 from docnote import ReftypeMarker
 
-from docnote_extract._crossrefs import Crossref
-from docnote_extract._crossrefs import make_crossreffed
-from docnote_extract._crossrefs import make_metaclass_crossreffed
 from docnote_extract._module_tree import ModuleTreeNode
-from docnote_extract._types import Singleton
+from docnote_extract.crossrefs import Crossref
+from docnote_extract.crossrefs import make_crossreffed
+from docnote_extract.crossrefs import make_metaclass_crossreffed
 from docnote_extract.discovery import discover_all_modules
 from docnote_extract.discovery import find_special_reftypes
+from docnote_extract.summaries import Singleton
 
 type TrackingRegistry = dict[int, tuple[str, str] | None]
 UNPURGEABLE_MODULES: Annotated[

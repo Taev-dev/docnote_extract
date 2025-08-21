@@ -6,9 +6,6 @@ from unittest.mock import patch
 import pytest
 from docnote import ReftypeMarker
 
-from docnote_extract._crossrefs import Crossref
-from docnote_extract._crossrefs import CrossrefMixin
-from docnote_extract._crossrefs import is_crossreffed
 from docnote_extract._extraction import _MODULE_TO_INSPECT
 from docnote_extract._extraction import GLOBAL_REFTYPE_MARKERS
 from docnote_extract._extraction import _DelegatedLoaderState
@@ -18,6 +15,9 @@ from docnote_extract._extraction import _ExtractionPhase
 from docnote_extract._extraction import _stubbed_getattr
 from docnote_extract._extraction import _StubStrategy
 from docnote_extract._extraction import is_module_post_extraction
+from docnote_extract.crossrefs import Crossref
+from docnote_extract.crossrefs import CrossrefMixin
+from docnote_extract.crossrefs import is_crossreffed
 
 import docnote_extract_testpkg
 from docnote_extract_testutils.fixtures import set_inspection

@@ -7,14 +7,14 @@ from unittest.mock import patch
 
 from docnote import ReftypeMarker
 
-from docnote_extract._crossrefs import Crossref
-from docnote_extract._crossrefs import has_crossreffed_base
-from docnote_extract._crossrefs import has_crossreffed_metaclass
-from docnote_extract._crossrefs import is_crossreffed
 from docnote_extract._extraction import _ExtractionFinderLoader
 from docnote_extract._extraction import _ExtractionPhase
 from docnote_extract._extraction import _wrapped_tracking_getattr
 from docnote_extract._extraction import is_wrapped_tracking_module
+from docnote_extract.crossrefs import Crossref
+from docnote_extract.crossrefs import has_crossreffed_base
+from docnote_extract.crossrefs import has_crossreffed_metaclass
+from docnote_extract.crossrefs import is_crossreffed
 
 import docnote_extract_testpkg
 import docnote_extract_testpkg._hand_rolled

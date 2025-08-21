@@ -8,24 +8,24 @@ from typing import overload
 
 from docnote import Note
 
-from docnote_extract._crossrefs import Crossref
-from docnote_extract._crossrefs import GetattrTraversal
 from docnote_extract._extraction import ReftypeMarker
 from docnote_extract._extraction import _ExtractionFinderLoader
 from docnote_extract._module_tree import ConfiguredModuleTreeNode
 from docnote_extract._module_tree import SummaryTreeNode
 from docnote_extract._summarization import SummaryMetadata
 from docnote_extract._summarization import summarize_module
-from docnote_extract._types import ModuleSummary
-from docnote_extract._types import SummaryBase
-from docnote_extract._types import SummaryMetadataFactoryProtocol
-from docnote_extract._types import SummaryMetadataProtocol
+from docnote_extract.crossrefs import Crossref
+from docnote_extract.crossrefs import GetattrTraversal
 from docnote_extract.exceptions import NotFirstpartyPackage
 from docnote_extract.exceptions import UnknownCrossrefTarget
 from docnote_extract.filtering import filter_canonical_ownership
 from docnote_extract.filtering import filter_module_summaries
 from docnote_extract.filtering import filter_private_summaries
 from docnote_extract.normalization import normalize_module_dict
+from docnote_extract.summaries import ModuleSummary
+from docnote_extract.summaries import SummaryBase
+from docnote_extract.summaries import SummaryMetadataFactoryProtocol
+from docnote_extract.summaries import SummaryMetadataProtocol
 
 
 @overload

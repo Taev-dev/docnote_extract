@@ -5,11 +5,11 @@ from docnote import DocnoteConfig
 from docnote import MarkupLang
 from docnote import Note
 
-from docnote_extract._types import DocText
 from docnote_extract._utils import extract_docstring
 from docnote_extract._utils import textify_notes
 from docnote_extract._utils import validate_config
 from docnote_extract.exceptions import InvalidConfig
+from docnote_extract.summaries import DocText
 
 
 class TestValidateConfig:

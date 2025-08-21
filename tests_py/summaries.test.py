@@ -6,15 +6,15 @@ from typing import cast
 
 import pytest
 
-from docnote_extract._crossrefs import Crossref
-from docnote_extract._crossrefs import Crossreffed
-from docnote_extract._types import CallableSummary
-from docnote_extract._types import ClassSummary
-from docnote_extract._types import CrossrefSummary
-from docnote_extract._types import ModuleSummary
-from docnote_extract._types import ObjClassification
-from docnote_extract._types import SummaryBase
-from docnote_extract._types import VariableSummary
+from docnote_extract.crossrefs import Crossref
+from docnote_extract.crossrefs import Crossreffed
+from docnote_extract.summaries import CallableSummary
+from docnote_extract.summaries import ClassSummary
+from docnote_extract.summaries import CrossrefSummary
+from docnote_extract.summaries import ModuleSummary
+from docnote_extract.summaries import ObjClassification
+from docnote_extract.summaries import SummaryBase
+from docnote_extract.summaries import VariableSummary
 
 fake_module = ModuleType('foo')
 def fake_func(): ...

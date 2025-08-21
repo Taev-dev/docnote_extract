@@ -15,12 +15,12 @@ from docnote import DocnoteGroup
 from docnote import MarkupLang
 from docnote import Note
 
-from docnote_extract._crossrefs import Crossref
-from docnote_extract._crossrefs import CrossrefTraversal
-from docnote_extract._crossrefs import GetattrTraversal
-from docnote_extract._crossrefs import ParamTraversal
-from docnote_extract._crossrefs import SignatureTraversal
-from docnote_extract._crossrefs import is_crossreffed
+from docnote_extract.crossrefs import Crossref
+from docnote_extract.crossrefs import CrossrefTraversal
+from docnote_extract.crossrefs import GetattrTraversal
+from docnote_extract.crossrefs import ParamTraversal
+from docnote_extract.crossrefs import SignatureTraversal
+from docnote_extract.crossrefs import is_crossreffed
 
 if typing.TYPE_CHECKING:
     from docnote_extract.normalization import LazyResolvingValue

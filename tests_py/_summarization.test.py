@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from docnote_extract._crossrefs import Crossref
-from docnote_extract._crossrefs import GetattrTraversal
 from docnote_extract._summarization import _prepare_attr_namespace
+from docnote_extract.crossrefs import Crossref
+from docnote_extract.crossrefs import GetattrTraversal
 
 
 class TestPrepareAttrNamespace:

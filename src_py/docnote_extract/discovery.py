@@ -15,9 +15,9 @@ from docnote import DOCNOTE_CONFIG_ATTR
 from docnote import DocnoteConfig
 from docnote import ReftypeMarker
 
-from docnote_extract._crossrefs import Crossref
-from docnote_extract._crossrefs import GetattrTraversal
-from docnote_extract._crossrefs import is_crossreffed
+from docnote_extract.crossrefs import Crossref
+from docnote_extract.crossrefs import GetattrTraversal
+from docnote_extract.crossrefs import is_crossreffed
 
 logger = logging.getLogger(__name__)
 

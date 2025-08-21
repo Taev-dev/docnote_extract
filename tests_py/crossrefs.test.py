@@ -1,14 +1,14 @@
-from docnote_extract._crossrefs import CallTraversal
-from docnote_extract._crossrefs import Crossref
-from docnote_extract._crossrefs import CrossrefMetaclass
-from docnote_extract._crossrefs import CrossrefMixin
-from docnote_extract._crossrefs import GetattrTraversal
-from docnote_extract._crossrefs import GetitemTraversal
-from docnote_extract._crossrefs import has_crossreffed_base
-from docnote_extract._crossrefs import has_crossreffed_metaclass
-from docnote_extract._crossrefs import is_crossreffed
-from docnote_extract._crossrefs import make_crossreffed
-from docnote_extract._crossrefs import make_metaclass_crossreffed
+from docnote_extract.crossrefs import CallTraversal
+from docnote_extract.crossrefs import Crossref
+from docnote_extract.crossrefs import CrossrefMetaclass
+from docnote_extract.crossrefs import CrossrefMixin
+from docnote_extract.crossrefs import GetattrTraversal
+from docnote_extract.crossrefs import GetitemTraversal
+from docnote_extract.crossrefs import has_crossreffed_base
+from docnote_extract.crossrefs import has_crossreffed_metaclass
+from docnote_extract.crossrefs import is_crossreffed
+from docnote_extract.crossrefs import make_crossreffed
+from docnote_extract.crossrefs import make_metaclass_crossreffed
 
 
 class TestMakeMetaclassCrossref:
