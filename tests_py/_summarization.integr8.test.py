@@ -52,6 +52,9 @@ class TestSummarization:
 
         money_summary = summary / GetattrTraversal('Money')
         assert isinstance(money_summary, ClassSummary)
+        assert money_summary.crossref is not None
+        assert money_summary.crossref.toplevel_name == 'Money'
+
         money_member_names = {member.name for member in money_summary.members}
         assert 'amount' in money_member_names
         assert 'currency' in money_member_names
