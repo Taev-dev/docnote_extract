@@ -177,3 +177,36 @@ class TestCrossrefMixin:
         assert retval._docnote_extract_metadata.toplevel_name == 'bar'
         assert retval._docnote_extract_metadata.traversals == (
             CallTraversal(args=('foo', 'bar'), kwargs={'baz': 'zab'}),)
+
+
+class TestCrossref:
+
+    def test_traversal_from_module(self):
+        """Truediv-based traversal from a module crossref must result in
+        a module name being set instead of an appended traversal.
+        """
+        before = Crossref(
+            module_name='foo',
+            toplevel_name=None,
+            traversals=())
+
+        result = before / GetattrTraversal('bar')
+
+        assert result is not before
+        assert not result.traversals
+        assert result.toplevel_name == 'bar'
+
+    def test_traversal_from_member(self):
+        """Truediv-based traversal from a module member must result in
+        a traversal being appended to the existing traversals.
+        """
+        before = Crossref(
+            module_name='foo',
+            toplevel_name='bar',
+            traversals=())
+
+        result = before / GetattrTraversal('baz')
+
+        assert result is not before
+        assert result.traversals == (GetattrTraversal('baz'),)
+        assert result.toplevel_name == 'bar'

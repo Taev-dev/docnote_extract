@@ -80,10 +80,23 @@ class Crossref:
         ] = ()
 
     def __truediv__(self, traversal: CrossrefTraversal) -> Crossref:
-        return Crossref(
-            module_name=self.module_name,
-            toplevel_name=self.toplevel_name,
-            traversals=(*self.traversals, traversal))
+        # Getattr traversals on a MODULE must result in setting the toplevel
+        # name instead of appending a traversal.
+        if (
+            self.toplevel_name is None
+            and isinstance(traversal, GetattrTraversal)
+        ):
+            return Crossref(
+                module_name=self.module_name,
+                toplevel_name=traversal.name,
+                # Tuples are immutable so we don't need to bother copying it
+                traversals=self.traversals)
+
+        else:
+            return Crossref(
+                module_name=self.module_name,
+                toplevel_name=self.toplevel_name,
+                traversals=(*self.traversals, traversal))
 
 
 class Crossreffed(Protocol):
