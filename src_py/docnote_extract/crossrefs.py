@@ -324,7 +324,7 @@ def make_crossreffed(
 
     # This is separate purely so we can isolate the type: ignore
     retval = CrossrefMetaclass(
-        'Crossref',
+        'Crossreffed',
         (CrossrefMixin,),
         {'_docnote_extract_metadata': new_metadata},
         __docnote_extract_traversal__=True)
