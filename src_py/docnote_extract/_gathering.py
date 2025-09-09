@@ -221,6 +221,8 @@ def gather[T: SummaryMetadataProtocol](
 
 @dataclass(slots=True, frozen=True)
 class Docnotes[T: SummaryMetadataProtocol]:
+    """
+    """
     summaries: dict[str, SummaryTreeNode[T]]
 
     def is_firstparty(self, crossref: Crossref) -> bool:

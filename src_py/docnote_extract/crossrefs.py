@@ -13,17 +13,23 @@ from docnote import Note
 
 @dataclass(slots=True, frozen=True)
 class GetattrTraversal:
+    """
+    """
     name: str
 
 
 @dataclass(slots=True, frozen=True)
 class CallTraversal:
+    """
+    """
     args: tuple[Any, ...]
     kwargs: dict[str, Any]
 
 
 @dataclass(slots=True, frozen=True)
 class GetitemTraversal:
+    """
+    """
     key: Any
 
 

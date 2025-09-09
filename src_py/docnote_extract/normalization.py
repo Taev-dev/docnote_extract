@@ -63,6 +63,8 @@ def normalize_namespace_item(
 
 @dataclass(slots=True)
 class NormalizedAnnotation:
+    """
+    """
     typespec: TypeSpec | None
     notes: tuple[Note, ...]
     config_params: DocnoteConfigParams
@@ -424,6 +426,8 @@ class NormalizedType:
 
 @dataclass(slots=True, frozen=True)
 class LazyResolvingValue:
+    """
+    """
     _crossref: Crossref | None
     _value: Literal[Singleton.MISSING] | Any
 
