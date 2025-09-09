@@ -3,16 +3,35 @@ from __future__ import annotations
 import itertools
 import logging
 from dataclasses import dataclass
+from enum import Enum
 from types import ModuleType
+from types import NoneType
 from types import UnionType
 from typing import Annotated
 from typing import Any
+from typing import ClassVar
+from typing import Final
 from typing import Literal
+from typing import LiteralString
+from typing import Never
+from typing import NoReturn
+from typing import NotRequired
+from typing import Required
+from typing import Self
 from typing import TypeAliasType
+from typing import TypedDict
+from typing import Union
 from typing import cast
-from typing import get_args as get_generic_args
+from typing import get_args as get_type_args
 from typing import get_origin
 from typing import get_type_hints
+
+try:
+    from typing import ReadOnly  # type: ignore
+except ImportError:
+    # This can just be whatever; doesn't matter -- as long as it's guaranteed
+    # to fail an ``is`` comparison!
+    ReadOnly = object()
 
 from docnote import DOCNOTE_CONFIG_ATTR
 from docnote import DocnoteConfig
@@ -49,6 +68,14 @@ def normalize_namespace_item(
         parent_effective_config.get_stackables()
     config_params.update(normalized_annotation.config_params)
 
+    # We have to be careful here, because the __module__ of the singletons
+    # is actually docnote_extract.summaries!
+    canonical_module: str | Literal[Singleton.UNKNOWN] | None
+    if value is Singleton.MISSING:
+        canonical_module = Singleton.UNKNOWN
+    else:
+        canonical_module = getattr(value, '__module__', Singleton.UNKNOWN)
+
     # All done. Filtering comes later; here we JUST want to do the
     # normalization!
     return NormalizedObj(
@@ -57,12 +84,14 @@ def normalize_namespace_item(
         effective_config=DocnoteConfig(**config_params),
         notes=normalized_annotation.notes,
         typespec=normalized_annotation.typespec,
-        canonical_module=getattr(value, '__module__', Singleton.UNKNOWN),
+        canonical_module=canonical_module,
         canonical_name=None)
 
 
 @dataclass(slots=True)
 class NormalizedAnnotation:
+    """
+    """
     typespec: TypeSpec | None
     notes: tuple[Note, ...]
     config_params: DocnoteConfigParams
@@ -250,14 +279,14 @@ def _get_or_infer_canonical_origin(
         if (
             # Summary:
             # ++  not imported from a tracking module
-            # ++  no ``__module__`` attribute
+            # ++  no ``__name__`` and/or ``__module__`` attribute
             # ++  name contained within ``__all__``
             # Conclusion: assume it's a canonical member.
             name_in_containing_module in containing_dunder_all
             # Summary:
             # ++  not imported from a tracking module (or at least not uniquely
             #     so) -- therefore, either a reftype or an actual value
-            # ++  no ``__module__`` attribute
+            # ++  no ``__name__`` and/or ``__module__`` attribute
             # ++  name contained within **module annotations**
             # Conclusion: assume it's a canonical member. This is almost
             # guaranteed; otherwise you'd have to annotate something you just
@@ -343,95 +372,285 @@ class NormalizedObj:
             + f'({self.canonical_module=}, {self.canonical_name=})')
 
 
+class _TypeSpecSpecialForms(TypedDict, total=False):
+    """This keeps track of any encountered special forms so they can be
+    applied to the root TypeSpec.
+    """
+    has_classvar: bool
+    has_final: bool
+    has_required: bool
+    has_not_required: bool
+    has_read_only: bool
+
+
+def _extract_special_forms(origin: Any) -> _TypeSpecSpecialForms | None:
+    if origin is ClassVar:
+        return {'has_classvar': True}
+    if origin is Final:
+        return {'has_final': True}
+    if origin is Required:
+        return {'has_required': True}
+    if origin is NotRequired:
+        return {'has_not_required': True}
+    if origin is ReadOnly:
+        return {'has_read_only': True}
+
+
 @dataclass(slots=True, frozen=True)
 class TypeSpec:
     """This is used as a container for ``NormalizedType``s. At the
-    moment, it's pretty simple: just a tuple to expand out unions.
-    This remains private, though, because if and when python introduces
-    an intersection type, this will get a whole lot more complicated.
+    moment, it's pretty simple: a tree that contains a single normalized
+    type or normalized union type. If and when python adds intersection
+    types, it will be expanded to include those.
+
+    **These are not meant to be constructed directly.** Instead, use the
+    ``from_typehint`` method to create them.
     """
-    _types: tuple[NormalizedType, ...]
+    normtype: NormalizedType
+    has_classvar: bool = False
+    has_final: bool = False
+    has_required: bool = False
+    has_not_required: bool = False
+    has_read_only: bool = False
 
-    def __format__(self, fmtinfo: str) -> str:
-        """If you don't want to actually resolve the annotation, and you
-        just want to stringify it, then use normal string formatting.
-        """
-        raise NotImplementedError
-
+    # The noqa flags are due to normalization hell; they're all about this
+    # being too complicated of a method
     @classmethod
-    def from_typehint(
+    def from_typehint(  # noqa: C901, PLR0912
             cls,
-            typehint: Crossreffed | type | TypeAliasType | UnionType | list
+            typehint:
+                Crossreffed | type | TypeAliasType | UnionType | list | None,
+            *,
+            _special_forms: _TypeSpecSpecialForms | None = None
             ) -> TypeSpec:
         """Converts an extracted type hint into a NormalizedType
         instance.
-
-        TODO: this needs a way to (either optionally or automatically)
-        expand private type aliases.
         """
+        if _special_forms is None:
+            special_forms = _TypeSpecSpecialForms()
+        else:
+            special_forms = _special_forms
+
+        normtype: NormalizedType
         if is_crossreffed(typehint):
-            return cls((NormalizedType(typehint._docnote_extract_metadata),))
+            normtype = NormalizedConcreteType(
+                typehint._docnote_extract_metadata)
+
+        elif NormalizedSpecialType.is_special_type(typehint):
+            normtype = NormalizedSpecialType.from_typehint(typehint)
 
         elif isinstance(typehint, UnionType):
-            norm_types = set()
-            for union_member in typehint.__args__:
-                norm_types.update(cls.from_typehint(union_member)._types)
-            return cls(tuple(norm_types))
+            normtype = NormalizedUnionType.from_typehint(
+                get_type_args(typehint))
 
         elif isinstance(typehint, TypeAliasType):
-            return cls((NormalizedType(Crossref(
-                module_name=typehint.__module__,
-                toplevel_name=typehint.__name__)),))
+            # Note that any type params here aren't relevant; they won't be
+            # bound vars! They'll just be as-declared on the alias, which will
+            # be documented (if needed) on the alias itself.
+            normtype = NormalizedConcreteType(Crossref.from_object(typehint))
 
         # This is the case in some special forms, like the argspec for
         # callables
         elif isinstance(typehint, list):
-            return cls((NormalizedType(
-                primary=None,
+            normtype = NormalizedEmptyGenericType(
                 params=tuple(
-                    TypeSpec.from_typehint(generic_arg)
-                    for generic_arg in typehint)),))
+                    cls.from_typehint(generic_arg)
+                    for generic_arg in typehint))
 
         else:
+            # Note that this will return ``None`` for generics that have not
+            # been passed a parameter. This is usually not a recoverable
+            # situation; the only exception is type vars, which have the
+            # ``__type_params__`` attribute, but that is only available for
+            # type aliases, which we already handled.
             origin = get_origin(typehint)
-            # Non-generics
+            # ----------------  Non-generics
             if origin is None:
                 # This is necessary because we're using TypeGuard instead of
                 # TypeIs so that we can have pseudo-intersections.
                 typehint = cast(type, typehint)
-                return cls((NormalizedType(Crossref(
-                    module_name=typehint.__module__,
-                    toplevel_name=typehint.__name__)),))
 
-            # Generics
+                normtype = NormalizedConcreteType(
+                    Crossref.from_object(typehint))
+
+            # ---------------- Special-case generics
+            elif origin is Literal:
+                normtype = NormalizedLiteralType.from_typehint(typehint)
+
+            # THIS MIGHT STILL BE A UNION TYPE!
+            # Things typed as ``Optional[...]`` will be converted behind
+            # the scenes into a ``_UnionGenericAlias`` type, which is,
+            # well, a generic -- **but the origin will be a plain union!**
+            elif origin is Union:
+                normtype = NormalizedUnionType.from_typehint(
+                        get_type_args(typehint))
+
+            # Theoretically possible because Annotated doesn't always get
+            # collapsed when nested in weird ways.
+            elif origin is Annotated:
+                # Pyright thinks this is a crossref; no idea why
+                typehint = cast(type, typehint)
+                # Here we want to fully unpack things and just defer to it,
+                # bypassing our usual special forms assignments
+                return cls.from_typehint(
+                    typehint.__origin__,
+                    _special_forms=special_forms)
+
+            # We want to normalize the special forms into the root TypeSpec
+            # for convenience; otherwise they make processing things difficult
+            # downstream, since you're constantly checking for them
+            elif (
+                update_special_forms := _extract_special_forms(origin)
+            ) is not None:
+                type_args = get_type_args(typehint)
+                if len(type_args) != 1:
+                    raise TypeError(
+                        'Unsupported arg count for special-form type!',
+                        typehint)
+
+                special_forms.update(update_special_forms)
+                return cls.from_typehint(
+                    type_args[0], _special_forms=special_forms)
+
+            # ----------------  (ahem...) Generic generics
             else:
-                return cls((NormalizedType(
-                    primary=origin,
+                normtype = NormalizedConcreteType(
+                    primary=Crossref.from_object(origin),
                     params=tuple(
-                        TypeSpec.from_typehint(generic_arg)
-                        for generic_arg in get_generic_args(typehint))),))
+                        cls.from_typehint(generic_arg)
+                        for generic_arg in get_type_args(typehint)))
+
+        return cls(normtype, **special_forms)
 
 
 @dataclass(slots=True, frozen=True)
-class NormalizedType:
+class NormalizedUnionType:
+    """This is used as a container for the members of union types. In
+    the future, if python adds an intersection type, it will need to be
+    included here as well.
+    """
+    normtypes: frozenset[NormalizedType]
+
+    @classmethod
+    def from_typehint(
+            cls,
+            typehint: tuple[
+                Crossreffed | type | TypeAliasType | UnionType | list, ...]
+            ) -> NormalizedUnionType:
+        norm_types = set()
+
+        for union_member in typehint:
+            # Note that we don't want to bubble out any special forms from
+            # the parent into the members of the union; that's not the way
+            # that typing works. In theory, the type checker will fail this,
+            # since it wouldn't be a valid declaration, but we want to be
+            # resilient against that (because it's trivial to do so; we just
+            # don't pass in the _special_forms argument!)
+            norm_types.add(TypeSpec.from_typehint(union_member).normtype)
+
+        return cls(frozenset(norm_types))
+
+
+class NormalizedSpecialType(Enum):
+    """There are several special types in python; we use this to mark
+    them in a way that doesn't require a crossref.
+    """
+    ANY = Any
+    # Deliberately omitting AnyStr since it's deprecated
+    LITERAL_STRING = LiteralString
+    NEVER = Never
+    NORETURN = NoReturn
+    SELF = Self
+    NONE = NoneType
+
+    @classmethod
+    def from_typehint(
+            cls,
+            typehint: Any,
+            ) -> NormalizedSpecialType:
+        if typehint is None:
+            typehint = NoneType
+
+        return cls(typehint)
+
+    @classmethod
+    def is_special_type(cls, typehint: Any) -> bool:
+        """Returns if the passed typehint is in fact a special type.
+        """
+        # Note: we want to be both fast AND resilient against unhashable types,
+        # so no sets here!
+        return (
+            typehint is Any
+            or typehint is LiteralString
+            or typehint is Never
+            or typehint is NoReturn
+            or typehint is Self
+            or typehint is NoneType
+            or typehint is None)
+
+
+@dataclass(slots=True, frozen=True)
+class NormalizedConcreteType:
     """This is used for all type annotations after normalization.
     """
     # None is used for some special forms (for example, the argspec for
     # callables)
-    primary: Crossref | None
+    primary: Crossref
     params: tuple[TypeSpec, ...] = ()
 
 
 @dataclass(slots=True, frozen=True)
+class NormalizedEmptyGenericType:
+    """This is used for some special-form type annotations that are
+    effectively just an empty generic -- for example, the argspec in a
+    callable.
+    """
+    params: tuple[TypeSpec, ...] = ()
+
+
+@dataclass(slots=True, frozen=True)
+class NormalizedLiteralType:
+    values: frozenset[int | bool | str | bytes | Crossref]
+
+    @classmethod
+    def from_typehint(
+            cls,
+            typehint: Any
+            ) -> NormalizedLiteralType:
+        values: set[int | bool | str | bytes | Crossref] = set()
+
+        for type_arg in get_type_args(typehint):
+            if isinstance(type_arg, int | bool | str | bytes | Crossref):
+                values.add(type_arg)
+
+            elif is_crossreffed(type_arg):
+                values.add(type_arg._docnote_extract_metadata)
+
+            # Note: this must be a enum object! (and a live one, not a
+            # crossref -- hence needing to convert it)
+            elif isinstance(type_arg, Enum):
+                values.add(Crossref.from_object(type_arg))
+
+            else:
+                raise TypeError('Invalid type for literal arg!', typehint)
+
+        return cls(frozenset(values))
+
+
+type NormalizedType = (
+    NormalizedUnionType
+    | NormalizedEmptyGenericType
+    | NormalizedConcreteType
+    | NormalizedSpecialType
+    | NormalizedLiteralType)
+
+
+@dataclass(slots=True, frozen=True)
 class LazyResolvingValue:
+    """
+    """
     _crossref: Crossref | None
     _value: Literal[Singleton.MISSING] | Any
-
-    def __format__(self, fmtinfo: str) -> str:
-        """If you don't want to actually resolve the annotation, and you
-        just want to stringify it, then use normal string formatting.
-        """
-        raise NotImplementedError
 
     def __call__(self) -> Any:
         """Resolves the actual annotation. Note that the import hook

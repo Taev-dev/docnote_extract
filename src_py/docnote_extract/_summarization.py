@@ -6,6 +6,7 @@ import logging
 from collections.abc import Callable
 from collections.abc import Iterable
 from dataclasses import dataclass
+from dataclasses import field
 from typing import Annotated
 from typing import Any
 from typing import Literal
@@ -102,7 +103,7 @@ class SummaryMetadata(SummaryMetadataProtocol):
     canonical_module: str | None
     to_document: bool
     disowned: bool
-    crossref_namespace: dict[str, Crossref]
+    crossref_namespace: dict[str, Crossref] = field(repr=False)
 
     @classmethod
     def factory(

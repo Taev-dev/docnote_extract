@@ -179,6 +179,8 @@ class ConfiguredModuleTreeNode(ModuleTreeNode):
 
 @dataclass(slots=True, frozen=True)
 class SummaryTreeNode[T: SummaryMetadataProtocol](ModuleTreeNode):
+    """
+    """
     _: KW_ONLY
     module_summary: ModuleSummary[T] = field(compare=False, repr=False)
     to_document: Annotated[
