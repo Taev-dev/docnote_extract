@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import Enum
+from types import ModuleType
 from typing import Annotated
 from typing import Any
 from typing import ClassVar
 from typing import Protocol
+from typing import TypeAliasType
 from typing import TypeGuard
 from typing import overload
 
@@ -103,6 +106,56 @@ class Crossref:
                 module_name=self.module_name,
                 toplevel_name=self.toplevel_name,
                 traversals=(*self.traversals, traversal))
+
+    @classmethod
+    def from_object(cls, obj: Any) -> Crossref:
+        """Attempts to create a crossref from the passed object. This
+        can only work conditionally; generally only types, functions,
+        and enums will succeed.
+
+        Note that this is safe to call on things that are already
+        crossrefs.
+        """
+        if isinstance(obj, Crossref):
+            return obj
+
+        # Note: NOT true for the enum class itself! Just for enum members.
+        if isinstance(obj, Enum):
+            name = obj.name
+            enum_cls = type(obj)
+            return cls(
+                module_name=enum_cls.__module__,
+                toplevel_name=enum_cls.__name__,
+                traversals=(GetattrTraversal(name),))
+
+        if isinstance(obj, ModuleType):
+            return cls(
+                module_name=obj.__name__,
+                toplevel_name=None,
+                traversals=())
+
+        if (
+            hasattr(obj, '__module__')
+            and hasattr(obj, '__name__')
+            and (
+                # Type aliases don't have qualnames, but also aren't valid in
+                # closures
+                isinstance(obj, TypeAliasType)
+                or (
+                    hasattr(obj, '__qualname__')
+                    # This is a quick and dirty way to detect the existence of
+                    # a closure
+                    and '<locals>' not in obj.__qualname__
+        ))):
+            return cls(
+                module_name=obj.__module__,
+                toplevel_name=obj.__name__,
+                traversals=())
+
+        else:
+            raise TypeError(
+                'Cannot create a crossref from that object without further '
+                + 'information!', obj)
 
 
 class Crossreffed(Protocol):

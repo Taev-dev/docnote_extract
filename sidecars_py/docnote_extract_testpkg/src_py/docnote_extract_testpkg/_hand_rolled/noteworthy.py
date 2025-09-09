@@ -23,6 +23,13 @@ DOCNOTE_CONFIG_ATTR: Annotated[
     ] = '_docnote_config'
 
 
+class HasVarsWithAnnotatedUnion:
+    foo: Annotated[
+        float | int,
+        Note('Just here to validate union collapsing')]
+    bar: float | int
+
+
 @docnote(DocnoteConfig(include_in_docs=False))
 def func_with_config():
     """This is here just to make sure that normalization works when a

@@ -1,5 +1,10 @@
 from collections.abc import Callable
 from importlib import import_module
+from typing import Any
+from typing import ClassVar
+from typing import Literal
+from typing import Optional
+from typing import Union
 from typing import cast
 
 from docnote import DocnoteConfig
@@ -7,7 +12,13 @@ from docnote import Note
 
 from docnote_extract._extraction import ModulePostExtraction
 from docnote_extract._module_tree import ConfiguredModuleTreeNode
+from docnote_extract.crossrefs import Crossref
+from docnote_extract.normalization import NormalizedConcreteType
+from docnote_extract.normalization import NormalizedEmptyGenericType
+from docnote_extract.normalization import NormalizedLiteralType
 from docnote_extract.normalization import NormalizedObj
+from docnote_extract.normalization import NormalizedSpecialType
+from docnote_extract.normalization import NormalizedUnionType
 from docnote_extract.normalization import TypeSpec
 from docnote_extract.normalization import normalize_module_dict
 
@@ -234,3 +245,146 @@ class TestNormalizeModuleMembers:
         assert not func_attr.notes
         assert func_attr.effective_config == DocnoteConfig(
             include_in_docs=False)
+
+
+class TestTypeSpec:
+    """Note: the test cases here could probably be parameterized, but
+    they were just different enough that I wanted to hand-code them
+    in a first run.
+    """
+
+    def test_from_stdlib_plain_type(self):
+        """TypeSpec.from_typehint with a stdlib plain (non-generic) type
+        as the typehint must return a result with all normalized types.
+        """
+        result = TypeSpec.from_typehint(int)
+
+        assert isinstance(result, TypeSpec)
+        assert isinstance(result.normtype, NormalizedConcreteType)
+        assert result.normtype.primary.toplevel_name == 'int'
+        assert not result.normtype.params
+
+    def test_from_stdlib_collection_type(self):
+        """TypeSpec.from_typehint with a stdlib generic collection type
+        as the typehint must return a result with all normalized types.
+        """
+        result = TypeSpec.from_typehint(frozenset[int])
+
+        assert isinstance(result, TypeSpec)
+        assert isinstance(result.normtype, NormalizedConcreteType)
+        assert result.normtype.primary.toplevel_name == 'frozenset'
+        assert len(result.normtype.params) == 1
+        paramtype, = result.normtype.params
+        assert isinstance(paramtype, TypeSpec)
+        assert isinstance(paramtype.normtype, NormalizedConcreteType)
+        assert not paramtype.normtype.params
+        assert paramtype.normtype.primary.toplevel_name == 'int'
+
+    def test_from_optional(self):
+        """TypeSpec.from_typehint with an Optional[...] type
+        as the typehint must return a correct result.
+        """
+        result = TypeSpec.from_typehint(Optional[int])
+
+        assert isinstance(result, TypeSpec)
+        assert isinstance(result.normtype, NormalizedUnionType)
+
+        assert len(result.normtype.normtypes) == 2
+        assert result.normtype.normtypes == frozenset({
+            NormalizedSpecialType.NONE,
+            NormalizedConcreteType(
+                primary=Crossref(
+                    module_name='builtins', toplevel_name='int'))})
+
+    def test_from_pipe_union(self):
+        """TypeSpec.from_typehint with a ``pipe | union`` type
+        as the typehint must return a correct result.
+        """
+        result = TypeSpec.from_typehint(int | bool)
+
+        assert isinstance(result, TypeSpec)
+        assert isinstance(result.normtype, NormalizedUnionType)
+
+        assert len(result.normtype.normtypes) == 2
+        assert result.normtype.normtypes == frozenset({
+            NormalizedConcreteType(
+                primary=Crossref(
+                    module_name='builtins', toplevel_name='int')),
+            NormalizedConcreteType(
+                primary=Crossref(
+                    module_name='builtins', toplevel_name='bool')),})
+
+    def test_from_explicit_union(self):
+        """TypeSpec.from_typehint with an explicit ``Union[...]`` type
+        as the typehint must return a correct result.
+        """
+        result = TypeSpec.from_typehint(Union[int, bool])
+
+        assert isinstance(result, TypeSpec)
+        assert isinstance(result.normtype, NormalizedUnionType)
+
+        assert len(result.normtype.normtypes) == 2
+        assert result.normtype.normtypes == frozenset({
+            NormalizedConcreteType(
+                primary=Crossref(
+                    module_name='builtins', toplevel_name='int')),
+            NormalizedConcreteType(
+                primary=Crossref(
+                    module_name='builtins', toplevel_name='bool')),})
+
+    def test_from_none(self):
+        """TypeSpec.from_typehint with the colloquial type of ``None``
+        as the typehint must return a correct result.
+        """
+        result = TypeSpec.from_typehint(None)
+
+        assert isinstance(result, TypeSpec)
+        assert result.normtype is NormalizedSpecialType.NONE
+
+    def test_from_any(self):
+        """TypeSpec.from_typehint with an ``Any`` type
+        as the typehint must return a correct result.
+        """
+        result = TypeSpec.from_typehint(Any)  # type: ignore
+
+        assert isinstance(result, TypeSpec)
+        assert result.normtype is NormalizedSpecialType.ANY
+
+    def test_from_classvar(self):
+        """TypeSpec.from_typehint with a ``ClassVar`` type
+        as the typehint must return a correct result.
+        """
+        result = TypeSpec.from_typehint(ClassVar[int])
+
+        assert isinstance(result, TypeSpec)
+        assert result.normtype == NormalizedConcreteType(
+            primary=Crossref(
+                module_name='builtins', toplevel_name='int'))
+        assert result.has_classvar is True
+
+    def test_from_literal(self):
+        """TypeSpec.from_typehint with a ``Literal`` type
+        as the typehint must return a correct result.
+        """
+        result = TypeSpec.from_typehint(Literal[True])  # type: ignore
+
+        assert isinstance(result, TypeSpec)
+        assert result.normtype == NormalizedLiteralType(
+            values=frozenset({True}))
+
+    def test_from_callable(self):
+        """TypeSpec.from_typehint with a ``Callable`` type
+        as the typehint must return a correct result.
+        """
+        result = TypeSpec.from_typehint(Callable[[int], bool])  # type: ignore
+
+        assert isinstance(result, TypeSpec)
+        assert result.normtype == NormalizedConcreteType(
+            primary=Crossref(
+                module_name='collections.abc', toplevel_name='Callable'),
+            params=(
+                TypeSpec(NormalizedEmptyGenericType(
+                    params=(TypeSpec(NormalizedConcreteType(primary=Crossref(
+                        module_name='builtins', toplevel_name='int'))),),)),
+                TypeSpec(NormalizedConcreteType(primary=Crossref(
+                    module_name='builtins', toplevel_name='bool')))))

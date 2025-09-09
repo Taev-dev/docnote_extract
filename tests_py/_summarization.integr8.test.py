@@ -5,6 +5,8 @@ from docnote_extract._module_tree import ConfiguredModuleTreeNode
 from docnote_extract._summarization import SummaryMetadata
 from docnote_extract._summarization import summarize_module
 from docnote_extract.crossrefs import GetattrTraversal
+from docnote_extract.normalization import NormalizedConcreteType
+from docnote_extract.normalization import NormalizedUnionType
 from docnote_extract.normalization import normalize_module_dict
 from docnote_extract.summaries import CallableSummary
 from docnote_extract.summaries import ClassSummary
@@ -111,3 +113,59 @@ class TestSummarization:
         code_alpha3_summary = currency_summary / GetattrTraversal(
             'code_alpha3')
         assert isinstance(code_alpha3_summary, VariableSummary)
+
+    @mocked_extraction_discovery([
+        'docnote_extract_testpkg',
+        'docnote_extract_testpkg._hand_rolled',
+        'docnote_extract_testpkg._hand_rolled.noteworthy',])
+    @purge_cached_testpkg_modules
+    def test_unions(self):
+        """A class/instance variable defined using an unions (both
+        within and outside of an ``Annotated``)
+        must be correctly summarized/normalized into a parent typespec
+        with each member of the union being a direct child of the
+        typespec, and not hidden within a nested ``NormalizedType``.
+        """
+        floader = _ExtractionFinderLoader(
+            frozenset({'docnote_extract_testpkg'}),
+            nostub_packages=frozenset({'pytest'}),)
+        extraction = floader.discover_and_extract()
+        module_trees = ConfiguredModuleTreeNode.from_extraction(extraction)
+        normalized_objs = normalize_module_dict(
+            extraction['docnote_extract_testpkg._hand_rolled.noteworthy'],
+            module_trees['docnote_extract_testpkg'])
+        mod_summary = summarize_module(
+            extraction['docnote_extract_testpkg._hand_rolled.noteworthy'],
+            normalized_objs,
+            module_trees['docnote_extract_testpkg'])
+
+        ann_union_summary = mod_summary / GetattrTraversal(
+            'HasVarsWithAnnotatedUnion') / GetattrTraversal('foo')
+        bare_union_summary = mod_summary / GetattrTraversal(
+            'HasVarsWithAnnotatedUnion') / GetattrTraversal('bar')
+        assert isinstance(ann_union_summary, VariableSummary)
+        assert isinstance(bare_union_summary, VariableSummary)
+
+        assert bare_union_summary.typespec is not None
+        assert isinstance(
+            bare_union_summary.typespec.normtype,
+            NormalizedUnionType)
+        assert len(bare_union_summary.typespec.normtype.normtypes) == 2
+        bare_type1, bare_type2 = bare_union_summary.typespec.normtype.normtypes
+        assert isinstance(bare_type1, NormalizedConcreteType)
+        assert isinstance(bare_type2, NormalizedConcreteType)
+        assert {
+            bare_type1.primary.toplevel_name,
+            bare_type2.primary.toplevel_name} == {'int', 'float'}
+
+        assert ann_union_summary.typespec is not None
+        assert isinstance(
+            ann_union_summary.typespec.normtype,
+            NormalizedUnionType)
+        assert len(ann_union_summary.typespec.normtype.normtypes) == 2
+        ann_type1, ann_type2 = ann_union_summary.typespec.normtype.normtypes
+        assert isinstance(ann_type1, NormalizedConcreteType)
+        assert isinstance(ann_type2, NormalizedConcreteType)
+        assert {
+            ann_type1.primary.toplevel_name,
+            ann_type2.primary.toplevel_name} == {'int', 'float'}
