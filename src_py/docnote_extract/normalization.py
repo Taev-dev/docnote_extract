@@ -59,8 +59,6 @@ def normalize_namespace_item(
     """Given a single item from a namespace (ie, **not a module**), this
     creates a NormalizedObj and returns it.
     """
-    # Here we're associating the object with any module-level annotations,
-    # but we're not yet separating the docnote annotations from the rest
     raw_annotation = parent_annotations.get(name_in_parent, Singleton.MISSING)
     normalized_annotation = normalize_annotation(raw_annotation)
 
@@ -75,25 +73,39 @@ def normalize_namespace_item(
         # Beware: remove this, and you'll run into infinite loops!
         if not is_crossreffed(decorated_config):
             config_params.update(decorated_config.as_nontotal_dict())
+    effective_config = DocnoteConfig(**config_params)
 
+    canonical_module: str | Literal[Singleton.UNKNOWN] | None
+    # First of all, if the config defines an override, use that!
+    if effective_config.canonical_module is not None:
+        canonical_module = effective_config.canonical_module
     # We have to be careful here, because the __module__ of the singletons
     # is actually docnote_extract.summaries!
-    canonical_module: str | Literal[Singleton.UNKNOWN] | None
-    if value is Singleton.MISSING:
+    elif value is Singleton.MISSING:
         canonical_module = Singleton.UNKNOWN
+    # IMPORTANT NOTE: we cannot infer that the module of the namespace object
+    # matches that of its parent, because of subclassing. You also can't rely
+    # upon its existence or non-existence in the parent annotations for the
+    # same reason: ``get_type_hints`` also retrieves the hints in the
+    # superclass!
     else:
         canonical_module = getattr(value, '__module__', Singleton.UNKNOWN)
+
+    if effective_config.canonical_name is None:
+        canonical_name = None
+    else:
+        canonical_name = effective_config.canonical_name
 
     # All done. Filtering comes later; here we JUST want to do the
     # normalization!
     return NormalizedObj(
         obj_or_stub=value,
         annotateds=normalized_annotation.annotateds,
-        effective_config=DocnoteConfig(**config_params),
+        effective_config=effective_config,
         notes=normalized_annotation.notes,
         typespec=normalized_annotation.typespec,
         canonical_module=canonical_module,
-        canonical_name=None)
+        canonical_name=canonical_name)
 
 
 @dataclass(slots=True)
@@ -223,12 +235,18 @@ def normalize_module_dict(
         normalized_obj_annotations = normalize_annotation(raw_annotation)
         config_params.update(normalized_obj_annotations.config_params)
 
+        effective_config = DocnoteConfig(**config_params)
+        if effective_config.canonical_module is not None:
+            canonical_module = effective_config.canonical_module
+        if effective_config.canonical_name is not None:
+            canonical_name = effective_config.canonical_name
+
         # All done. Filtering comes later; here we JUST want to do the
         # normalization!
         retval[name] = NormalizedObj(
             obj_or_stub=obj,
             annotateds=normalized_obj_annotations.annotateds,
-            effective_config=DocnoteConfig(**config_params),
+            effective_config=effective_config,
             notes=normalized_obj_annotations.notes,
             typespec=normalized_obj_annotations.typespec,
             canonical_module=canonical_module,

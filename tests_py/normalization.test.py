@@ -69,6 +69,41 @@ class TestNormalizeNamespaceItem:
         assert not result.notes
         assert result.effective_config == DocnoteConfig(include_in_docs=False)
 
+    @purge_cached_testpkg_modules
+    def test_canonical_overrides(self):
+        """A value defined within a namespace (ex a class) that contains
+        a ``DocnoteConfig`` with overrides for the canonical name and
+        module must reflect those in the returned normalized object.
+        """
+        test_module = cast(
+            ModulePostExtraction,
+            import_module('docnote_extract_testpkg._hand_rolled.noteworthy'))
+        test_module._docnote_extract_import_tracking_registry = {}
+        module_tree = ConfiguredModuleTreeNode(
+            'docnote_extract_testpkg',
+            'docnote_extract_testpkg',
+            {'_hand_rolled': ConfiguredModuleTreeNode(
+                'docnote_extract_testpkg._hand_rolled',
+                '_hand_rolled',
+                {'noteworthy': ConfiguredModuleTreeNode(
+                    'docnote_extract_testpkg._hand_rolled.noteworthy',
+                    'noteworthy',
+                    effective_config=DocnoteConfig())},
+                effective_config=DocnoteConfig())},
+            effective_config=DocnoteConfig())
+
+        normalized_module = normalize_module_dict(test_module, module_tree)
+        parent_obj = normalized_module['ClassWithDecoratedConfigMethod']
+
+        result = normalize_namespace_item(
+            'func_with_canonical_overrides',
+            value=ClassWithDecoratedConfigMethod.func_with_canonical_overrides,
+            parent_annotations=get_type_hints(ClassWithDecoratedConfigMethod),
+            parent_effective_config=parent_obj.effective_config)
+
+        assert result.canonical_module == 'foo.bar'
+        assert result.canonical_name == 'baz'
+
 
 class TestNormalizeModuleMembers:
     """Performs spot tests against a testpkg module that does no
@@ -290,6 +325,35 @@ class TestNormalizeModuleMembers:
         assert not func_attr.notes
         assert func_attr.effective_config == DocnoteConfig(
             include_in_docs=False)
+
+    @purge_cached_testpkg_modules
+    def test_canonical_overrides(self):
+        """A value defined within a namespace (ex a class) that contains
+        a ``DocnoteConfig`` with overrides for the canonical name and
+        module must reflect those in the returned normalized object.
+        """
+        test_module = cast(
+            ModulePostExtraction,
+            import_module('docnote_extract_testpkg._hand_rolled.noteworthy'))
+        test_module._docnote_extract_import_tracking_registry = {}
+        module_tree = ConfiguredModuleTreeNode(
+            'docnote_extract_testpkg',
+            'docnote_extract_testpkg',
+            {'_hand_rolled': ConfiguredModuleTreeNode(
+                'docnote_extract_testpkg._hand_rolled',
+                '_hand_rolled',
+                {'noteworthy': ConfiguredModuleTreeNode(
+                    'docnote_extract_testpkg._hand_rolled.noteworthy',
+                    'noteworthy',
+                    effective_config=DocnoteConfig())},
+                effective_config=DocnoteConfig())},
+            effective_config=DocnoteConfig())
+
+        normalized = normalize_module_dict(test_module, module_tree)
+        result = normalized['func_with_canonical_overrides']
+
+        assert result.canonical_module == 'foo.bar'
+        assert result.canonical_name == 'baz'
 
 
 class TestTypeSpec:

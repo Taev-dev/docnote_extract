@@ -38,6 +38,14 @@ def func_with_config():
     """
 
 
+@docnote(DocnoteConfig(canonical_module='foo.bar', canonical_name='baz'))
+def func_with_canonical_overrides():
+    """This is here just to make sure that normalization works when a
+    config is attached via the ``@docnote`` decorator instead of an
+    annotation.
+    """
+
+
 @docnote(DocnoteConfig(include_in_docs=True))
 class ClassWithDecoratedConfigMethod:
 
@@ -46,4 +54,11 @@ class ClassWithDecoratedConfigMethod:
         """This is here just to make sure that normalization works when
         a config is attached via the ``@docnote`` decorator instead of
         an annotation when normalizing inside of a class.
+        """
+
+    @docnote(DocnoteConfig(canonical_module='foo.bar', canonical_name='baz'))
+    def func_with_canonical_overrides(self):
+        """This is here just to make sure that normalization works when a
+        config is attached via the ``@docnote`` decorator instead of an
+        annotation.
         """
