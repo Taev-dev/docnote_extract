@@ -36,3 +36,14 @@ def func_with_config():
     config is attached via the ``@docnote`` decorator instead of an
     annotation.
     """
+
+
+@docnote(DocnoteConfig(include_in_docs=True))
+class ClassWithDecoratedConfigMethod:
+
+    @docnote(DocnoteConfig(include_in_docs=False))
+    def func_with_config(self):
+        """This is here just to make sure that normalization works when
+        a config is attached via the ``@docnote`` decorator instead of
+        an annotation when normalizing inside of a class.
+        """

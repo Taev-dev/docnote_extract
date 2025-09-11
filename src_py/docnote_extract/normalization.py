@@ -68,6 +68,14 @@ def normalize_namespace_item(
         parent_effective_config.get_stackables()
     config_params.update(normalized_annotation.config_params)
 
+    # This gets any config that was attrached via decorator, for classes
+    # and functions.
+    if hasattr(value, DOCNOTE_CONFIG_ATTR):
+        decorated_config = getattr(value, DOCNOTE_CONFIG_ATTR)
+        # Beware: remove this, and you'll run into infinite loops!
+        if not is_crossreffed(decorated_config):
+            config_params.update(decorated_config.as_nontotal_dict())
+
     # We have to be careful here, because the __module__ of the singletons
     # is actually docnote_extract.summaries!
     canonical_module: str | Literal[Singleton.UNKNOWN] | None
