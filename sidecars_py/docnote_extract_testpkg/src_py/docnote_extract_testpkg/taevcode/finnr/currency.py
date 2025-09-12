@@ -8,7 +8,7 @@
 #            pkg_name='finnr',
 #            offset_dest_root_dir='taevcode',
 #            root_path='src_py/finnr',
-#            commit_hash='5a58ed0fc95b068ae396ce3adea91ca66cabe169',
+#            commit_hash='17cf5230f6f24f968aebe07cb92072ccaa9f0eda',
 #            license_paths=set())
 
 # The license of the original project is included in the top level of
@@ -19,6 +19,7 @@
 # ``uv run python -m docnote_extract_testpkg_factory``.
 
 from __future__ import annotations
+from collections import defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass
 from dataclasses import field
@@ -36,6 +37,13 @@ from finnr._types import Singleton
 from finnr.money import Money
 @dataclass(slots=True, frozen=True)
 class Currency:
+    """Currency objects contain all of the relevant metadata associated
+    with a particular currency -- for example, the Euro. Generally, they
+    are intended to be grouped together into a ``CurrencySet`` for use.
+    Note that all ISO-4217 currencies are included in the ``finnr.iso``
+    module as a single currency set, colloquially known as the
+    [[iso mint](&'docnote/finnr.iso:mint')].
+    """
     code_alpha3: Annotated[
         str,
         ClcNote('''For all ISO currencies, this is the ISO 4217 alpha-3
@@ -175,7 +183,7 @@ class CurrencySet(frozenset[Currency]):
     **must** have unique alpha and numeric codes.
     """
     _by_alpha3: dict[str, Currency]
-    _by_num: dict[int, Currency]
+    _by_num: dict[int, list[Currency]]
     def __init__(self, *args, **kwargs):
         ...
 
@@ -215,17 +223,56 @@ class CurrencySet(frozenset[Currency]):
         ...
 
     @overload
-    def get(self, code: str, default=None) -> Currency | None: ...
+    def get[T](self, code: str, default: T = None) -> Currency | T: ...
     @overload
-    def get(self, code: int, default=None) -> Currency | None: ...
-    def get(self, code: str | int, default=None) -> Currency | None:
+    def get[T](
+            self,
+            code: int,
+            default: T = None,
+            *,
+            on_date: DateLike | None = None,
+            ) -> Currency | T: ...
+    def get[T](
+            self,
+            code: str | int,
+            default: T = None,
+            *,
+            on_date: DateLike | None = None,
+            ) -> Currency | T:
         """Finds a currency from the currency set based on either the
         alpha3 or numeric code. This has the same semantics as
         ``dict.get``, in that it will return the provided ``default``
         value if no match is found (and if no explicit default is
         passed, this will return ``None``).
+        Note that numeric codes aren't necessarily unique across all
+        time (at least for ISO). As such, if you want to look up a
+        currency based on its numeric code, you should specify a
+        date for clarity. If none is specified, we'll return the
+        currency that was most recently active (which, in most case,
+        will be the currently-active currency with that code).
         """
         ...
+
+def _get_on_specific_date(
+        bynum_list: list[Currency],
+        target_date: DateLike
+        ) -> Currency | None:
+    """Use this to find a currency defined on a particular date. Returns
+    None if there wasn't any there.
+    """
+    ...
+
+def _quickcomp_datelike(datelike: DateLike) -> int:
+    """Uses bitshifts to create a quick comparison value for a datelike.
+    """
+    ...
+
+def _sortkey_most_recently_active(currency: Currency):
+    """Use this as a sort key for date-likes. A value of None is used
+    for "no date yet", and is therefore most recent. A value of
+    "unknown" is interpreted as -1 (ie, before all time).
+    """
+    ...
 
 def heal_float(dec: Decimal) -> Decimal:
     """Given a decimal constructed from a float, **truncates** it to

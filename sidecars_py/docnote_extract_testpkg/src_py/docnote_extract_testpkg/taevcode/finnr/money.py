@@ -8,7 +8,7 @@
 #            pkg_name='finnr',
 #            offset_dest_root_dir='taevcode',
 #            root_path='src_py/finnr',
-#            commit_hash='5a58ed0fc95b068ae396ce3adea91ca66cabe169',
+#            commit_hash='17cf5230f6f24f968aebe07cb92072ccaa9f0eda',
 #            license_paths=set())
 
 # The license of the original project is included in the top level of
@@ -44,10 +44,14 @@ amount_getter: Annotated[
 ] = operator.attrgetter('amount')
 @dataclass(slots=True)
 class Money(MoneyMathImpl):
-    """Note that this might be theoretically nonsensical, for
-    example, including fractional cents of the USD. This can be
-    rounded either fractionally or decimally via the associated
-    methods.
+    """``Money`` objects, in addition to specifying an explicit
+    amount and currency, also include a number of math functions
+    that match your intuitive expectation of how money math actually
+    works.
+    Note that monetary amounts are not limited in precision to the
+    minor denominator of their associated currency. To round the amount
+    to the nearest unit, call ``round_to_major`` or ``round_to_minor``,
+    both of which will return a new ``Money`` object.
     """
     amount: Decimal
     currency: Currency
