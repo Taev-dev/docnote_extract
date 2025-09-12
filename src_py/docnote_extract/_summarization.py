@@ -4,9 +4,9 @@ import inspect
 import itertools
 import logging
 from collections.abc import Callable
-from collections.abc import Iterable
 from dataclasses import dataclass
 from dataclasses import field
+from dataclasses import replace as dc_replace
 from typing import Annotated
 from typing import Any
 from typing import Literal
@@ -138,7 +138,7 @@ def summarize_module[T: SummaryMetadataProtocol](
     module_crossref = Crossref(
         module_name=module.__name__,
         toplevel_name=None)
-    namespace = _prepare_attr_namespace(module_crossref, None, normalized_objs)
+    namespace: dict[str, Crossref] = {}
     module_name = module.__name__
 
     module_members: set[NamespaceMemberSummary[T]] = set()
@@ -267,6 +267,7 @@ def create_variable_summary(
     # If missing, use the runtime type as an inference -- unless the
     # object was a bare annotation (without a typespec?! weird), then
     # we can't do anything.
+    notes = textify_notes(obj.notes, obj.effective_config)
     if obj.typespec is None and src_obj is not Singleton.MISSING:
         if is_crossreffed(src_obj):
             logger.warning(
@@ -277,6 +278,23 @@ def create_variable_summary(
             # we don't support type inference here; you really MUST declare
             # it as an explicit type
             typespec = None
+
+        elif isinstance(src_obj, property):
+            renormalized_obj = dc_replace(obj, obj_or_stub=src_obj.fget)
+            callable_summary = create_callable_summary(
+                name_in_parent,
+                parent_crossref_namespace,
+                renormalized_obj,
+                classification,
+                module_globals=module_globals,
+                in_class=in_class,
+                summary_metadata_factory=summary_metadata_factory)
+            signature_summary, = callable_summary.signatures
+            typespec = signature_summary.retval.typespec
+
+            if callable_summary.docstring is not None:
+                notes = (*notes, callable_summary.docstring)
+
         else:
             typespec = TypeSpec.from_typehint(type(src_obj))
     else:
@@ -285,7 +303,7 @@ def create_variable_summary(
     return VariableSummary(
         name=name_in_parent,
         typespec=typespec,
-        notes=textify_notes(obj.notes, obj.effective_config),
+        notes=notes,
         crossref=crossref,
         ordering_index=obj.effective_config.ordering_index,
         child_groups=obj.effective_config.child_groups or (),
@@ -313,6 +331,7 @@ def _summarize_namespace_member[T: SummaryMetadataProtocol](  # noqa: PLR0913
         crossref = None
     else:
         crossref = parent_crossref / GetattrTraversal(attr_name)
+        parent_namespace[attr_name] = crossref
 
     # This seems, at first glance, to be weird. Like, how can we have a
     # module here? Except if you do ``import foo``... welp, now you have
@@ -611,9 +630,13 @@ def create_callable_summary(
             parent_effective_config=obj.effective_config,
             module_globals=module_globals,
             summary_metadata_factory=summary_metadata_factory)
-        if signature is not None and signature_crossref is not None:
+
+        # None signatures happen very occasionally for ex C extensions
+        if signature is not None:
             signatures.append(signature)
-            namespace_expansion['__signature_impl__'] = signature_crossref
+
+            if signature_crossref is not None:
+                namespace_expansion['__signature_impl__'] = signature_crossref
 
     crossref = parent_crossref_namespace.get(name_in_parent)
     metadata = summary_metadata_factory(
@@ -797,25 +820,3 @@ def _make_signature(  # noqa: PLR0913
         child_groups=signature_config.child_groups or (),
         parent_group_name=signature_config.parent_group_name,
         metadata=signature_metadata)
-
-
-def _prepare_attr_namespace(
-        parent_crossref: Crossref,
-        parent_crossref_namespace: dict[str, Crossref] | None,
-        attr_names: Iterable[str],
-        ) -> dict[str, Crossref]:
-    """This takes a sequence of child attribute names and constructs
-    crossrefs for each of them. It then adds them to a namespace based
-    only upon their name within the parent.
-    """
-    retval = {}
-
-    if parent_crossref_namespace is not None:
-        retval.update(parent_crossref_namespace)
-
-    # Note: we're not doing any filtering here. That comes later. We really
-    # just want to construct a namespace for all of the items.
-    for attr_name in attr_names:
-        retval[attr_name] = parent_crossref / GetattrTraversal(attr_name)
-
-    return retval

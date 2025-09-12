@@ -66,10 +66,20 @@ def normalize_namespace_item(
         parent_effective_config.get_stackables()
     config_params.update(normalized_annotation.config_params)
 
+    # We need to do some unwrapping here of misc common things. This will
+    # let us extract the docstring along with any config decorations, but
+    # doesn't do any special handling for properties (yet)
+    if isinstance(value, property):
+        unwrapped = value.fget
+    elif isinstance(value, (staticmethod, classmethod)):
+        unwrapped = value.__func__
+    else:
+        unwrapped = value
+
     # This gets any config that was attrached via decorator, for classes
     # and functions.
-    if hasattr(value, DOCNOTE_CONFIG_ATTR):
-        decorated_config = getattr(value, DOCNOTE_CONFIG_ATTR)
+    if hasattr(unwrapped, DOCNOTE_CONFIG_ATTR):
+        decorated_config = getattr(unwrapped, DOCNOTE_CONFIG_ATTR)
         # Beware: remove this, and you'll run into infinite loops!
         if not is_crossreffed(decorated_config):
             config_params.update(decorated_config.as_nontotal_dict())
@@ -81,7 +91,7 @@ def normalize_namespace_item(
         canonical_module = effective_config.canonical_module
     # We have to be careful here, because the __module__ of the singletons
     # is actually docnote_extract.summaries!
-    elif value is Singleton.MISSING:
+    elif unwrapped is Singleton.MISSING:
         canonical_module = Singleton.UNKNOWN
     # IMPORTANT NOTE: we cannot infer that the module of the namespace object
     # matches that of its parent, because of subclassing. You also can't rely
@@ -89,7 +99,7 @@ def normalize_namespace_item(
     # same reason: ``get_type_hints`` also retrieves the hints in the
     # superclass!
     else:
-        canonical_module = getattr(value, '__module__', Singleton.UNKNOWN)
+        canonical_module = getattr(unwrapped, '__module__', Singleton.UNKNOWN)
 
     if effective_config.canonical_name is None:
         canonical_name = None
@@ -99,6 +109,8 @@ def normalize_namespace_item(
     # All done. Filtering comes later; here we JUST want to do the
     # normalization!
     return NormalizedObj(
+        # We want this to be the original object, not the wrapped one, because
+        # that affects how we do classification during summarization
         obj_or_stub=value,
         annotateds=normalized_annotation.annotateds,
         effective_config=effective_config,

@@ -2,10 +2,50 @@
 description: 'The build-time companion package to docnote'
 <
 
+> Quickstart
+__embed__: 'code/python'
+    from docnote_extract import gather
+
+    # Replace with whatever package(s) you want to document
+    gather(['finnr'])
+
+
+
+
+> Limitations
+    ++  namespace packages not supported. you must include ``__init__.py``.
+        this is an upstream requirement from cpython itself.
+    ++  due to the stubbing strategy, star imports (which you shouldn't be
+        using anyways) are fragile, and only work at all in the following
+        two situations:
+        ++  they're an intra-package import -- ie, not from a third-party
+            package -- and the source module defines an ``__all__``
+        ++  they're from a third-party package with stubbing disabled
+    ++  generally speaking, re-exports must be added to the re-exporting
+        module's ``__all__`` for it to be included in documentation
+
+
+> Core assumptions
+    ++  Third-party and intra-package dependencies are always imported from
+        their canonical source module.
+        ++  For intra-package dependencies, how this looks in documentation
+            can be changed via docnote configs -- this allows you, for example,
+            to re-export members of private submodules under a public API.
+            However, all of your internal imports should point to the same
+            location: the module where the dependency was originally defined.
+            Failure to do so can cause issues with determining the canonical
+            source, resulting in broken intra-module documentation links.
+        ++  For third-party dependencies, the rule is: first and foremost,
+            always import the same object from the same location, but second,
+            import it from the "most proper" location, as according to that
+            dependency's docs. Failure to be consistent can result in problems
+            determining the canonical source of objects within your docs and
+            inconsistent types; failure to import from "most proper" locations
+            can break any automatically-generated links to their documentation.
+
 
 > Thoughts: docnote_extract
     Very first thing:
-    ++  set ``typing.TYPE_CHECKING`` to true
     ++  install the importhook
 
     I think I just want this to build a document tree. Not even have any
@@ -73,3 +113,12 @@ description: 'The build-time companion package to docnote'
         ++  you'd need to have a ``make_link`` env function, so that the
             template hyperlinks work
 
+
+
+> Contributing
+
+    TODO: proper contributing guide.
+
+    Things to remember in the meantime:
+    ++  we use conftest.py strictly for pytest customization. Fixtures etc
+        should be put into ``docnote_extract_testutils`` within ``sidecars_py``.
