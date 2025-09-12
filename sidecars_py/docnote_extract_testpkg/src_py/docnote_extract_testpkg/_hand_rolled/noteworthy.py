@@ -62,3 +62,13 @@ class ClassWithDecoratedConfigMethod:
         config is attached via the ``@docnote`` decorator instead of an
         annotation.
         """
+
+
+class ClassWithProperty:
+
+    @property
+    def custom_property(self) -> bool:
+        """This should be summarized as a variable, with the return type
+        assigned as the typespec, and this docstring as the note.
+        """
+        ...

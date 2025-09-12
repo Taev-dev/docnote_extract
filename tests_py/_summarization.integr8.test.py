@@ -4,6 +4,7 @@ from docnote_extract._extraction import _ExtractionFinderLoader
 from docnote_extract._module_tree import ConfiguredModuleTreeNode
 from docnote_extract._summarization import SummaryMetadata
 from docnote_extract._summarization import summarize_module
+from docnote_extract.crossrefs import Crossref
 from docnote_extract.crossrefs import GetattrTraversal
 from docnote_extract.normalization import NormalizedConcreteType
 from docnote_extract.normalization import NormalizedUnionType
@@ -169,3 +170,40 @@ class TestSummarization:
         assert {
             ann_type1.primary.toplevel_name,
             ann_type2.primary.toplevel_name} == {'int', 'float'}
+
+    @mocked_extraction_discovery([
+        'docnote_extract_testpkg',
+        'docnote_extract_testpkg._hand_rolled',
+        'docnote_extract_testpkg._hand_rolled.noteworthy',])
+    @purge_cached_testpkg_modules
+    def test_properties(self):
+        """A property must be summarized as a variable within its parent
+        class, with the return type of the underlying function used to
+        create its typespec, and the docstring to create its note.
+        """
+        floader = _ExtractionFinderLoader(
+            frozenset({'docnote_extract_testpkg'}),
+            nostub_packages=frozenset({'pytest'}),)
+        extraction = floader.discover_and_extract()
+        module_trees = ConfiguredModuleTreeNode.from_extraction(extraction)
+        normalized_objs = normalize_module_dict(
+            extraction['docnote_extract_testpkg._hand_rolled.noteworthy'],
+            module_trees['docnote_extract_testpkg'])
+        mod_summary = summarize_module(
+            extraction['docnote_extract_testpkg._hand_rolled.noteworthy'],
+            normalized_objs,
+            module_trees['docnote_extract_testpkg'])
+
+        prop_summary = mod_summary / GetattrTraversal(
+            'ClassWithProperty') / GetattrTraversal('custom_property')
+        assert isinstance(prop_summary, VariableSummary)
+
+        assert prop_summary.typespec is not None
+        assert prop_summary.typespec.normtype == NormalizedConcreteType(
+            primary=Crossref(module_name='builtins', toplevel_name='bool'))
+        assert prop_summary.notes is not None
+        assert len(prop_summary.notes) == 1
+        doctext, = prop_summary.notes
+        assert 'summarized as a variable' in doctext.value
+
+        assert prop_summary.crossref is not None
