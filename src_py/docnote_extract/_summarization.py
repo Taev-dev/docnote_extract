@@ -4,7 +4,6 @@ import inspect
 import itertools
 import logging
 from collections.abc import Callable
-from collections.abc import Iterable
 from dataclasses import dataclass
 from dataclasses import field
 from dataclasses import replace as dc_replace
