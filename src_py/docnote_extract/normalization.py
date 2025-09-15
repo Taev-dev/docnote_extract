@@ -310,7 +310,7 @@ def normalize_module_dict(
     return retval
 
 
-def _get_or_infer_canonical_origin(
+def _get_or_infer_canonical_origin(  # noqa: PLR0911
         name_in_containing_module: str,
         obj: Any,
         *,
@@ -325,14 +325,39 @@ def _get_or_infer_canonical_origin(
     attribute, as well as the name it was assigned within that module,
     or to try and infer the canonical source of the object when no
     __module__ attribute is available.
+
+    This function is purely responsible for checking the object itself.
+    Callers are expected to override the result if there is an attached
+    docnote config with an explicit canonical origin.
     """
     if isinstance(obj, ModuleType):
         return None, None
 
+    # This can only happen if it's a bare annotation -- something coming
+    # directly from the containing module's annotations, but without a value
+    # assigned. That's weird, but we can safely assume it's coming from inside
+    # the house (so to speak)
     if obj is Singleton.MISSING:
         return containing_module, name_in_containing_module
 
+    assignable_to_module = (
+        # If the name is in the containing module's dunder all, assume it's
+        # canonically part of the module. If this behavior is not desired,
+        # you need to explicitly set the override via docnote config
+        name_in_containing_module in containing_dunder_all
+        # Same deal if the name is in the module's annotations. This is an
+        # even stronger chance of correct inference, since re-exports aren't
+        # likely to re-annotate things they're importing
+        or name_in_containing_module in containing_annotation_names)
+
     if is_crossreffed(obj):
+        # It should be pretty safe (and is reasonable) to assume that something
+        # crossreffed but also assignable to the module is either a re-export,
+        # or (for example) an instance of an imported class. In any case, this
+        # can be overridden via the docnote config if undesired.
+        if assignable_to_module:
+            return containing_module, name_in_containing_module
+
         metadata = obj._docnote_extract_metadata
         if metadata.traversals:
             logger.warning(
@@ -357,23 +382,13 @@ def _get_or_infer_canonical_origin(
 
     canonical_module, canonical_name = _get_dunder_module_and_name(obj)
     if canonical_module is None:
-        if (
-            # Summary:
-            # ++  not imported from a tracking module
-            # ++  no ``__name__`` and/or ``__module__`` attribute
-            # ++  name contained within ``__all__``
-            # Conclusion: assume it's a canonical member.
-            name_in_containing_module in containing_dunder_all
-            # Summary:
-            # ++  not imported from a tracking module (or at least not uniquely
-            #     so) -- therefore, either a reftype or an actual value
-            # ++  no ``__name__`` and/or ``__module__`` attribute
-            # ++  name contained within **module annotations**
-            # Conclusion: assume it's a canonical member. This is almost
-            # guaranteed; otherwise you'd have to annotate something you just
-            # imported
-            or name_in_containing_module in containing_annotation_names
-        ):
+        # Summary:
+        # ++  not imported from a tracking module (or at least not uniquely
+        #     so) -- therefore, either a reftype or an actual value
+        # ++  no ``__name__`` and/or ``__module__`` attribute
+        # ++  name contained within module annotations or dunder all
+        # Conclusion: assume it's a canonical member
+        if assignable_to_module:
             canonical_module = containing_module
             canonical_name = name_in_containing_module
 
