@@ -96,3 +96,26 @@ class TestGatheringE2E:
         assert isinstance(literal_value, Crossref)
         assert literal_value.toplevel_name == 'Singleton'
         assert literal_value.traversals == (GetattrTraversal('UNKNOWN'),)
+
+    def test_spotcheck_iso(self, testpkg_docs: Docnotes[SummaryMetadata]):
+        """A spot-check of the finnr iso module must match the
+        expected results. In particular, the mint must be correctly
+        assigned to the module, and not disowned.
+        """
+        (_, tree_root), = testpkg_docs.summaries.items()
+        iso_mod_node = tree_root.find(
+            'docnote_extract_testpkg.taevcode.finnr.iso')
+        iso_mod_summary = iso_mod_node.module_summary
+        resulting_names = {
+            child.name
+            for child in iso_mod_summary.members
+            if child.metadata.included}
+        assert resulting_names == {'mint'}
+
+        mint_summary = iso_mod_summary / GetattrTraversal('mint')
+        assert isinstance(mint_summary, VariableSummary)
+        assert mint_summary.typespec is not None
+        assert mint_summary.typespec.normtype == NormalizedConcreteType(
+            primary=Crossref(
+                module_name='finnr.currency', toplevel_name='CurrencySet'),
+            params=())
