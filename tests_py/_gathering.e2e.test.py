@@ -10,6 +10,7 @@ from docnote_extract.crossrefs import GetattrTraversal
 from docnote_extract.normalization import NormalizedConcreteType
 from docnote_extract.normalization import NormalizedLiteralType
 from docnote_extract.normalization import NormalizedUnionType
+from docnote_extract.summaries import CallableSummary
 from docnote_extract.summaries import ClassSummary
 from docnote_extract.summaries import VariableSummary
 
@@ -96,6 +97,28 @@ class TestGatheringE2E:
         assert isinstance(literal_value, Crossref)
         assert literal_value.toplevel_name == 'Singleton'
         assert literal_value.traversals == (GetattrTraversal('UNKNOWN'),)
+
+    def test_currencyset_call(self, testpkg_docs: Docnotes[SummaryMetadata]):
+        """The ``CurrencySet.__call__`` summary must have a signature
+        and not be disowned.
+        """
+        (_, tree_root), = testpkg_docs.summaries.items()
+        currency_mod_node = tree_root.find(
+            'docnote_extract_testpkg.taevcode.finnr.currency')
+        currency_mod_summary = currency_mod_node.module_summary
+        call_summary = (
+            currency_mod_summary
+            / GetattrTraversal('CurrencySet')
+            / GetattrTraversal('__call__'))
+
+        assert isinstance(call_summary, CallableSummary)
+        assert len(call_summary.signatures) == 1
+        assert not call_summary.metadata.disowned
+        assert call_summary.metadata.to_document
+
+        signature_summary, = call_summary.signatures
+        assert not signature_summary.metadata.disowned
+        assert signature_summary.metadata.to_document
 
     def test_spotcheck_iso(self, testpkg_docs: Docnotes[SummaryMetadata]):
         """A spot-check of the finnr iso module must match the

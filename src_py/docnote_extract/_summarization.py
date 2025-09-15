@@ -643,7 +643,11 @@ def create_callable_summary(  # noqa: C901, PLR0912
     if isinstance(src_obj, (staticmethod, classmethod)):
         src_obj = src_obj.__func__
 
+    # Note that this already has any ``@docnote(DocnoteConfig(...))``
+    # attachments (on the **implementation**) attached; we don't need to
+    # re-apply them.
     implementation_config = obj.effective_config
+
     # Note that this doesn't include the implementation, only the
     # overloads, so we still need to merge it with the signature from
     # inspecting the implementation

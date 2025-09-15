@@ -322,12 +322,16 @@ class _SummaryBaseProtocol[T: SummaryMetadataProtocol](Protocol):
         """
         ...
 
-    def flatten(self) -> Iterator[SummaryBase[T]]:
+    def flatten(self, *, reverse: bool = False) -> Iterator[SummaryBase[T]]:
         """Yield all of the nodes at the summary, recursively,
         in a depth-first fashion. Primarily intended for updating
         metadata values based on filters.
 
         Order of the branches is arbitrary.
+
+        By default, order from outermost node to innermost (parents
+        first, then children). If ``reverse`` is true, order from
+        innermost node to outermost (children first, then parents).
         """
         ...
 
@@ -385,10 +389,16 @@ class ModuleSummary[T: SummaryMetadataProtocol](SummaryBase[T]):
         # KeyError is a LookupError subclass, so this is fine.
         return self._member_lookup[traversal]
 
-    def flatten(self) -> Iterator[SummaryBase[T]]:
-        yield self
-        for child in self.members:
-            yield from child.flatten()
+    def flatten(self, *, reverse: bool = False) -> Iterator[SummaryBase[T]]:
+        if reverse:
+            for child in self.members:
+                yield from child.flatten(reverse=reverse)
+            yield self
+
+        else:
+            yield self
+            for child in self.members:
+                yield from child.flatten(reverse=reverse)
 
     def in_dunder_all(self, name: str) -> bool:
         """Returns True if the module has a dunder all declared **and**
@@ -421,7 +431,7 @@ class CrossrefSummary[T: SummaryMetadataProtocol](SummaryBase[T]):
         raise LookupError(
             'Crossref summaries have no traversals', self, traversal)
 
-    def flatten(self) -> Iterator[SummaryBase[T]]:
+    def flatten(self, *, reverse: bool = False) -> Iterator[SummaryBase[T]]:
         yield self
 
 
@@ -443,7 +453,7 @@ class TypeVarSummary[T: SummaryMetadataProtocol](SummaryBase[T]):
         raise LookupError(
             'TypeVar summaries have no traversals', self, traversal)
 
-    def flatten(self) -> Iterator[SummaryBase[T]]:
+    def flatten(self, *, reverse: bool = False) -> Iterator[SummaryBase[T]]:
         yield self
 
 
@@ -469,7 +479,7 @@ class VariableSummary[T: SummaryMetadataProtocol](SummaryBase[T]):
         raise LookupError(
             'Variable summaries have no traversals', self, traversal)
 
-    def flatten(self) -> Iterator[SummaryBase[T]]:
+    def flatten(self, *, reverse: bool = False) -> Iterator[SummaryBase[T]]:
         yield self
 
 
@@ -513,10 +523,15 @@ class ClassSummary[T: SummaryMetadataProtocol](SummaryBase[T]):
         # KeyError is a LookupError subclass, so this is fine.
         return self._member_lookup[traversal]
 
-    def flatten(self) -> Iterator[SummaryBase[T]]:
-        yield self
-        for child in self.members:
-            yield from child.flatten()
+    def flatten(self, *, reverse: bool = False) -> Iterator[SummaryBase[T]]:
+        if reverse:
+            for child in self.members:
+                yield from child.flatten(reverse=reverse)
+            yield self
+        else:
+            yield self
+            for child in self.members:
+                yield from child.flatten(reverse=reverse)
 
 
 @dataclass(slots=True, frozen=True, kw_only=True)
@@ -582,10 +597,15 @@ class CallableSummary[T: SummaryMetadataProtocol](SummaryBase[T]):
 
         return self._member_lookup[traversal]
 
-    def flatten(self) -> Iterator[SummaryBase[T]]:
-        yield self
-        for child in self.signatures:
-            yield from child.flatten()
+    def flatten(self, *, reverse: bool = False) -> Iterator[SummaryBase[T]]:
+        if reverse:
+            for child in self.signatures:
+                yield from child.flatten(reverse=reverse)
+            yield self
+        else:
+            yield self
+            for child in self.signatures:
+                yield from child.flatten(reverse=reverse)
 
 
 @dataclass(slots=True, frozen=True, kw_only=True)
@@ -640,11 +660,17 @@ class SignatureSummary[T: SummaryMetadataProtocol](SummaryBase[T]):
         # KeyError is a LookupError subclass, so this is fine.
         return self._member_lookup[traversal]
 
-    def flatten(self) -> Iterator[SummaryBase[T]]:
-        yield self
-        for child in self.params:
-            yield from child.flatten()
-        yield self.retval
+    def flatten(self, *, reverse: bool = False) -> Iterator[SummaryBase[T]]:
+        if reverse:
+            for child in self.params:
+                yield from child.flatten(reverse=reverse)
+            yield self.retval
+            yield self
+        else:
+            yield self
+            yield self.retval
+            for child in self.params:
+                yield from child.flatten(reverse=reverse)
 
 
 @dataclass(slots=True, frozen=True, kw_only=True)
@@ -669,7 +695,7 @@ class ParamSummary[T: SummaryMetadataProtocol](SummaryBase[T]):
         raise LookupError(
             'Param summaries have no traversals', self, traversal)
 
-    def flatten(self) -> Iterator[SummaryBase[T]]:
+    def flatten(self, *, reverse: bool = False) -> Iterator[SummaryBase[T]]:
         yield self
 
 
@@ -691,5 +717,5 @@ class RetvalSummary[T: SummaryMetadataProtocol](SummaryBase[T]):
         raise LookupError(
             'Retval summaries have no traversals', self, traversal)
 
-    def flatten(self) -> Iterator[SummaryBase[T]]:
+    def flatten(self, *, reverse: bool = False) -> Iterator[SummaryBase[T]]:
         yield self
