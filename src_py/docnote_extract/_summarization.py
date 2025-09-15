@@ -4,6 +4,7 @@ import inspect
 import itertools
 import logging
 from collections.abc import Callable
+from collections.abc import Mapping
 from dataclasses import dataclass
 from dataclasses import field
 from dataclasses import replace as dc_replace
@@ -11,6 +12,7 @@ from typing import Annotated
 from typing import Any
 from typing import Literal
 from typing import Protocol
+from typing import TypeVar
 from typing import cast
 from typing import get_overloads
 from typing import get_type_hints
@@ -28,12 +30,15 @@ from docnote_extract.crossrefs import Crossref
 from docnote_extract.crossrefs import GetattrTraversal
 from docnote_extract.crossrefs import ParamTraversal
 from docnote_extract.crossrefs import SignatureTraversal
+from docnote_extract.crossrefs import SyntacticTraversal
+from docnote_extract.crossrefs import SyntacticTraversalType
 from docnote_extract.crossrefs import has_crossreffed_base
 from docnote_extract.crossrefs import has_crossreffed_metaclass
 from docnote_extract.crossrefs import is_crossreffed
 from docnote_extract.normalization import LazyResolvingValue
 from docnote_extract.normalization import NormalizedObj
 from docnote_extract.normalization import TypeSpec
+from docnote_extract.normalization import extend_typevars
 from docnote_extract.normalization import normalize_annotation
 from docnote_extract.normalization import normalize_namespace_item
 from docnote_extract.summaries import CallableColor
@@ -52,6 +57,7 @@ from docnote_extract.summaries import Singleton
 from docnote_extract.summaries import SummaryBase
 from docnote_extract.summaries import SummaryMetadataFactoryProtocol
 from docnote_extract.summaries import SummaryMetadataProtocol
+from docnote_extract.summaries import TypeVarSummary
 from docnote_extract.summaries import VariableSummary
 
 logger = logging.getLogger(__name__)
@@ -141,6 +147,7 @@ def summarize_module[T: SummaryMetadataProtocol](
     namespace: dict[str, Crossref] = {}
     module_name = module.__name__
 
+    typevars: set[TypeVarSummary[T]] = set()
     module_members: set[NamespaceMemberSummary[T]] = set()
     for name, normalized_obj in normalized_objs.items():
         member_summary = _summarize_namespace_member(
@@ -152,7 +159,9 @@ def summarize_module[T: SummaryMetadataProtocol](
             normalized_obj,
             summary_metadata_factory,
             in_class=False)
-        if member_summary is not None:
+        if isinstance(member_summary, TypeVarSummary):
+            typevars.add(member_summary)
+        elif member_summary is not None:
             module_members.add(member_summary)
 
     config = module_tree.find(module.__name__).effective_config
@@ -178,6 +187,7 @@ def summarize_module[T: SummaryMetadataProtocol](
         parent_group_name=None,
         child_groups=config.child_groups or (),
         metadata=metadata,
+        typevars=frozenset(typevars),
         dunder_all=dunder_all,
         docstring=extract_docstring(module, config),
         members=frozenset(module_members))
@@ -296,7 +306,9 @@ def create_variable_summary(
                 notes = (*notes, callable_summary.docstring)
 
         else:
-            typespec = TypeSpec.from_typehint(type(src_obj))
+            typespec = TypeSpec.from_typehint(
+                type(src_obj),
+                typevars=obj.typevars)
     else:
         typespec = obj.typespec
 
@@ -305,6 +317,67 @@ def create_variable_summary(
         typespec=typespec,
         notes=notes,
         crossref=crossref,
+        ordering_index=obj.effective_config.ordering_index,
+        child_groups=obj.effective_config.child_groups or (),
+        parent_group_name=obj.effective_config.parent_group_name,
+        metadata=metadata)
+
+
+@_summary_factory(TypeVarSummary)
+def create_typevar_summary(
+        name_in_parent: str,
+        parent_crossref_namespace: dict[str, Crossref],
+        obj: NormalizedObj,
+        classification: ObjClassification,
+        *,
+        module_globals: dict[str, Any],
+        in_class: bool = False,
+        summary_metadata_factory: SummaryMetadataFactoryProtocol,
+        ) -> TypeVarSummary:
+    """This is used **only for module-level typevars** to create
+    typevar summaries. If you need typevar summaries for ANYTHING ELSE,
+    see ``_make_typevar_summary_direct``.
+    """
+    src_obj = cast(TypeVar, obj.obj_or_stub)
+
+    crossref = parent_crossref_namespace.get(name_in_parent)
+    metadata = summary_metadata_factory(
+        classification=classification,
+        summary_class=TypeVarSummary,
+        crossref=crossref,
+        annotateds=tuple(
+            LazyResolvingValue.from_annotated(annotated)
+            for annotated in obj.annotateds),
+        metadata=obj.effective_config.metadata or {})
+    metadata.extracted_inclusion = \
+        obj.effective_config.include_in_docs
+    metadata.crossref_namespace = parent_crossref_namespace
+    metadata.canonical_module = (
+        obj.canonical_module if obj.canonical_module is not Singleton.UNKNOWN
+        else None)
+
+    if hasattr(src_obj, 'has_default') and src_obj.has_default():  # type: ignore
+        default = TypeSpec.from_typehint(
+            src_obj.__default__, typevars=obj.typevars)  # type: ignore
+    else:
+        default = None
+
+    # This is the default. Creating an actual binding to None doesn't really
+    # make sense, so we'll stick to the convention.
+    if src_obj.__bound__ is None:
+        bound = None
+    else:
+        bound = TypeSpec.from_typehint(
+            src_obj.__bound__, typevars=obj.typevars)
+
+    return TypeVarSummary(
+        name=name_in_parent,
+        crossref=crossref,
+        bound=bound,
+        constraints=tuple(
+            TypeSpec.from_typehint(constraint, typevars=obj.typevars)
+            for constraint in src_obj.__constraints__),
+        default=default,
         ordering_index=obj.effective_config.ordering_index,
         child_groups=obj.effective_config.child_groups or (),
         parent_group_name=obj.effective_config.parent_group_name,
@@ -367,6 +440,7 @@ def _summarize_namespace_member[T: SummaryMetadataProtocol](  # noqa: PLR0913
     elif summary_class is not None and issubclass(
         summary_class,
         ClassSummary | VariableSummary | CallableSummary | CrossrefSummary
+        | TypeVarSummary
     ):
         factory = _summary_factories[summary_class]
         return factory(
@@ -455,7 +529,12 @@ def create_class_summary(
         bare_annotations.items()
     ):
         normalized_members[name] = normalize_namespace_item(
-            name, value, annotations, config)
+            name,
+            crossref,
+            value,
+            annotations,
+            config,
+            parent_typevars=obj.typevars)
 
     namespace = {**parent_crossref_namespace}
     members: dict[
@@ -483,9 +562,11 @@ def create_class_summary(
 
     if has_crossreffed_metaclass(src_obj):
         metaclass = TypeSpec.from_typehint(
-            src_obj._docnote_extract_metaclass)
+            src_obj._docnote_extract_metaclass,
+            typevars=obj.typevars)
     elif (runtime_metaclass := type(src_obj)) is not type:
-        metaclass = TypeSpec.from_typehint(runtime_metaclass)
+        metaclass = TypeSpec.from_typehint(
+            runtime_metaclass, typevars=obj.typevars)
     else:
         metaclass = None
 
@@ -504,6 +585,17 @@ def create_class_summary(
         obj.canonical_module if obj.canonical_module is not Singleton.UNKNOWN
         else None)
 
+    typevars = getattr(src_obj, '__type_params__', ())
+    tv_summaries = frozenset({
+        _make_typevar_summary_direct(
+            typevar,
+            parent_crossref=crossref,
+            parent_crossref_namespace=namespace,
+            parent_typevars=obj.typevars,
+            parent_canonical_module=obj.canonical_module,
+            summary_metadata_factory=summary_metadata_factory)
+        for typevar in typevars})
+
     return ClassSummary(
         # Note: might differ from src_obj.__name__
         name=name_in_parent,
@@ -513,13 +605,16 @@ def create_class_summary(
         parent_group_name=config.parent_group_name,
         metadata=metadata,
         metaclass=metaclass,
-        bases=tuple(TypeSpec.from_typehint(base) for base in bases),
+        typevars=tv_summaries,
+        bases=tuple(
+            TypeSpec.from_typehint(base, typevars=obj.typevars)
+            for base in bases),
         members=frozenset(members.values()),
         docstring=extract_docstring(src_obj, config),)
 
 
 @_summary_factory(CallableSummary)
-def create_callable_summary(
+def create_callable_summary(  # noqa: C901, PLR0912
         name_in_parent: str,
         parent_crossref_namespace: dict[str, Crossref],
         obj: NormalizedObj,
@@ -583,8 +678,13 @@ def create_callable_summary(
             # incorrectly overlap with the no-overload traversal, and
             # because it would be redundant with all other un-indexed
             # overloads.
-            if overload_config.ordering_index is None or crossref is None:
+            if crossref is None:
                 signature_crossref = None
+                namespace_expansion_key = ''
+            elif overload_config.ordering_index is None:
+                signature_crossref = crossref / SyntacticTraversal(
+                    type_=SyntacticTraversalType.ANONYMOUS_OVERLOAD,
+                    key='')
                 namespace_expansion_key = ''
             else:
                 # Note that this is required to make the signature, so
@@ -606,6 +706,7 @@ def create_callable_summary(
                 signature_crossref,
                 signature_config=overload_config,
                 parent_effective_config=obj.effective_config,
+                parent_typevars=obj.typevars,
                 module_globals=module_globals,
                 summary_metadata_factory=summary_metadata_factory)
             if signature is None:
@@ -628,6 +729,7 @@ def create_callable_summary(
             signature_crossref,
             signature_config=implementation_config,
             parent_effective_config=obj.effective_config,
+            parent_typevars=obj.typevars,
             module_globals=module_globals,
             summary_metadata_factory=summary_metadata_factory)
 
@@ -670,7 +772,7 @@ def create_callable_summary(
         signatures=frozenset(signatures))
 
 
-def _make_signature(  # noqa: PLR0913
+def _make_signature(  # noqa: PLR0913, PLR0915
         parent_crossref_namespace: dict[str, Crossref],
         src_obj: Callable,
         canonical_module: str | None,
@@ -678,6 +780,7 @@ def _make_signature(  # noqa: PLR0913
         signature_config: DocnoteConfig,
         parent_effective_config: DocnoteConfig,
         *,
+        parent_typevars: Mapping[TypeVar, Crossref],
         module_globals: dict[str, Any],
         summary_metadata_factory: SummaryMetadataFactoryProtocol,
         ) -> SignatureSummary | None:
@@ -714,6 +817,10 @@ def _make_signature(  # noqa: PLR0913
     # so that params can reference each other.
     signature_namespace: dict[str, Crossref] = {
         **parent_crossref_namespace}
+    signature_typevars = extend_typevars(
+        parent_crossref=signature_crossref,
+        parent_typevars=parent_typevars,
+        obj=src_obj)
 
     for param_index, (param_name, raw_param) in enumerate(
         raw_sig.parameters.items()
@@ -738,7 +845,9 @@ def _make_signature(  # noqa: PLR0913
                 raw_param.default)
 
         annotation = annotations.get(param_name, Singleton.MISSING)
-        normalized_annotation = normalize_annotation(annotation)
+        normalized_annotation = normalize_annotation(
+            annotation,
+            typevars=signature_typevars)
         combined_params: DocnoteConfigParams = {
             **parent_effective_config.get_stackables(),
             **normalized_annotation.config_params}
@@ -775,7 +884,8 @@ def _make_signature(  # noqa: PLR0913
         retval_crossref = signature_crossref / ParamTraversal('return')
         signature_namespace['return'] = retval_crossref
     retval_annotation = annotations.get('return', Singleton.MISSING)
-    normalized_retval_annotation = normalize_annotation(retval_annotation)
+    normalized_retval_annotation = normalize_annotation(
+        retval_annotation, typevars=signature_typevars)
     combined_params: DocnoteConfigParams = {
         **parent_effective_config.get_stackables(),
         **normalized_retval_annotation.config_params}
@@ -802,6 +912,18 @@ def _make_signature(  # noqa: PLR0913
         signature_config.include_in_docs
     signature_metadata.crossref_namespace = signature_namespace
     signature_metadata.canonical_module = canonical_module
+
+    typevars = getattr(src_obj, '__type_params__', ())
+    tv_summaries = frozenset({
+        _make_typevar_summary_direct(
+            typevar,
+            parent_crossref=signature_crossref,
+            parent_crossref_namespace=signature_namespace,
+            parent_typevars=parent_typevars,
+            parent_canonical_module=canonical_module,
+            summary_metadata_factory=summary_metadata_factory)
+        for typevar in typevars})
+
     return SignatureSummary(
         params=frozenset(params),
         retval=RetvalSummary(
@@ -815,8 +937,70 @@ def _make_signature(  # noqa: PLR0913
             metadata=retval_metadata
         ),
         docstring=None,
+        typevars=tv_summaries,
         crossref=signature_crossref,
-        ordering_index=None,
+        ordering_index=signature_config.ordering_index,
         child_groups=signature_config.child_groups or (),
         parent_group_name=signature_config.parent_group_name,
         metadata=signature_metadata)
+
+
+def _make_typevar_summary_direct(
+        src_obj: TypeVar,
+        parent_crossref: Crossref | None,
+        parent_crossref_namespace: dict[str, Crossref],
+        parent_canonical_module: str | Literal[Singleton.UNKNOWN] | None,
+        parent_typevars: Mapping[TypeVar, Crossref],
+        *,
+        summary_metadata_factory: SummaryMetadataFactoryProtocol,
+        ) -> TypeVarSummary:
+    """This is used to create typevarsummary objects for anything that
+    was defined using the type var SYNTAX -- ie anything not
+    module-level.
+    """
+    if parent_crossref is None:
+        crossref = None
+    else:
+        crossref = parent_crossref / SyntacticTraversal(
+            type_=SyntacticTraversalType.TYPEVAR,
+            key=src_obj.__name__)
+
+    metadata = summary_metadata_factory(
+        classification=ObjClassification.from_obj(src_obj),
+        summary_class=TypeVarSummary,
+        crossref=crossref,
+        annotateds=(),
+        metadata={})
+    metadata.extracted_inclusion = None
+    metadata.crossref_namespace = parent_crossref_namespace
+    metadata.canonical_module = (
+        parent_canonical_module
+        if parent_canonical_module is not Singleton.UNKNOWN
+        else None)
+
+    if hasattr(src_obj, 'has_default') and src_obj.has_default():  # type: ignore
+        default = TypeSpec.from_typehint(
+            src_obj.__default__, typevars=parent_typevars)  # type: ignore
+    else:
+        default = None
+
+    # This is the default. Creating an actual binding to None doesn't really
+    # make sense, so we'll stick to the convention.
+    if src_obj.__bound__ is None:
+        bound = None
+    else:
+        bound = TypeSpec.from_typehint(
+            src_obj.__bound__, typevars=parent_typevars)
+
+    return TypeVarSummary(
+        name=src_obj.__name__,
+        crossref=crossref,
+        bound=bound,
+        constraints=tuple(
+            TypeSpec.from_typehint(constraint, typevars=parent_typevars)
+            for constraint in src_obj.__constraints__),
+        default=default,
+        ordering_index=None,
+        child_groups=(),
+        parent_group_name=None,
+        metadata=metadata)

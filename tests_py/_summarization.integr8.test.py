@@ -6,12 +6,16 @@ from docnote_extract._summarization import SummaryMetadata
 from docnote_extract._summarization import summarize_module
 from docnote_extract.crossrefs import Crossref
 from docnote_extract.crossrefs import GetattrTraversal
+from docnote_extract.crossrefs import SignatureTraversal
+from docnote_extract.crossrefs import SyntacticTraversal
+from docnote_extract.crossrefs import SyntacticTraversalType
 from docnote_extract.normalization import NormalizedConcreteType
 from docnote_extract.normalization import NormalizedUnionType
 from docnote_extract.normalization import normalize_module_dict
 from docnote_extract.summaries import CallableSummary
 from docnote_extract.summaries import ClassSummary
 from docnote_extract.summaries import ModuleSummary
+from docnote_extract.summaries import TypeVarSummary
 from docnote_extract.summaries import VariableSummary
 
 from docnote_extract_testutils.fixtures import mocked_extraction_discovery
@@ -207,3 +211,65 @@ class TestSummarization:
         assert 'summarized as a variable' in doctext.value
 
         assert prop_summary.crossref is not None
+
+    @mocked_extraction_discovery([
+        'docnote_extract_testpkg',
+        'docnote_extract_testpkg._hand_rolled',
+        'docnote_extract_testpkg._hand_rolled.has_typevars',])
+    @purge_cached_testpkg_modules
+    def test_type_vars(self):
+        """Type vars, both module-level and syntax-sugared, must be
+        correctly handled and correctly referenced in summary results.
+        """
+        floader = _ExtractionFinderLoader(
+            frozenset({'docnote_extract_testpkg'}),
+            nostub_packages=frozenset({'pytest'}),)
+        extraction = floader.discover_and_extract()
+        module_trees = ConfiguredModuleTreeNode.from_extraction(extraction)
+        normalized_objs = normalize_module_dict(
+            extraction['docnote_extract_testpkg._hand_rolled.has_typevars'],
+            module_trees['docnote_extract_testpkg'])
+        mod_summary = summarize_module(
+            extraction['docnote_extract_testpkg._hand_rolled.has_typevars'],
+            normalized_objs,
+            module_trees['docnote_extract_testpkg'])
+
+        tv_summary = mod_summary / GetattrTraversal('_ModuleTypeVar')
+        modvar_summary = mod_summary / GetattrTraversal('uses_module_typevar')
+        sugar_summary = mod_summary / GetattrTraversal('uses_sugared_typevar')
+
+        assert isinstance(tv_summary, TypeVarSummary)
+        assert tv_summary.name == '_ModuleTypeVar'
+        assert not tv_summary.constraints
+        assert tv_summary.bound is None
+        assert tv_summary.default is None
+
+        assert isinstance(modvar_summary, CallableSummary)
+        assert len(modvar_summary.signatures) == 1
+        assert isinstance(sugar_summary, CallableSummary)
+        assert len(sugar_summary.signatures) == 1
+
+        modvar_sig, = modvar_summary.signatures
+        sugar_sig, = sugar_summary.signatures
+
+        assert len(modvar_sig.typevars) == 0
+        assert len(sugar_sig.typevars) == 1
+
+        assert modvar_sig.retval.typespec is not None
+        assert isinstance(
+            modvar_sig.retval.typespec.normtype, NormalizedConcreteType)
+        assert modvar_sig.retval.typespec.normtype.primary == Crossref(
+            module_name='docnote_extract_testpkg._hand_rolled.has_typevars',
+            toplevel_name='_ModuleTypeVar')
+        assert sugar_sig.retval.typespec is not None
+        assert isinstance(
+            sugar_sig.retval.typespec.normtype, NormalizedConcreteType)
+        print(sugar_sig.retval.typespec.normtype.primary)
+        assert sugar_sig.retval.typespec.normtype.primary == Crossref(
+            module_name='docnote_extract_testpkg._hand_rolled.has_typevars',
+            toplevel_name='uses_sugared_typevar',
+            traversals=(
+                SignatureTraversal(ordering_index=None),
+                SyntacticTraversal(
+                    type_=SyntacticTraversalType.TYPEVAR,
+                    key='T'),))

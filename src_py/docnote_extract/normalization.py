@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import itertools
 import logging
+from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import Enum
 from types import ModuleType
@@ -20,6 +21,7 @@ from typing import Required
 from typing import Self
 from typing import TypeAliasType
 from typing import TypedDict
+from typing import TypeVar
 from typing import Union
 from typing import cast
 from typing import get_args as get_type_args
@@ -44,6 +46,8 @@ from docnote_extract._module_tree import ConfiguredModuleTreeNode
 from docnote_extract._utils import validate_config
 from docnote_extract.crossrefs import Crossref
 from docnote_extract.crossrefs import Crossreffed
+from docnote_extract.crossrefs import SyntacticTraversal
+from docnote_extract.crossrefs import SyntacticTraversalType
 from docnote_extract.crossrefs import is_crossreffed
 from docnote_extract.summaries import Singleton
 
@@ -52,15 +56,23 @@ logger = logging.getLogger(__name__)
 
 def normalize_namespace_item(
         name_in_parent: str,
+        crossref: Crossref | None,
         value: Any,
         parent_annotations: dict[str, Any],
         parent_effective_config: DocnoteConfig,
+        *,
+        parent_typevars: Mapping[TypeVar, Crossref]
         ) -> NormalizedObj:
     """Given a single item from a namespace (ie, **not a module**), this
     creates a NormalizedObj and returns it.
     """
     raw_annotation = parent_annotations.get(name_in_parent, Singleton.MISSING)
-    normalized_annotation = normalize_annotation(raw_annotation)
+    typevars = extend_typevars(
+        parent_crossref=crossref,
+        parent_typevars=parent_typevars,
+        obj=value)
+    normalized_annotation = normalize_annotation(
+        raw_annotation, typevars=typevars)
 
     config_params: DocnoteConfigParams = \
         parent_effective_config.get_stackables()
@@ -116,6 +128,7 @@ def normalize_namespace_item(
         effective_config=effective_config,
         notes=normalized_annotation.notes,
         typespec=normalized_annotation.typespec,
+        typevars=typevars,
         canonical_module=canonical_module,
         canonical_name=canonical_name)
 
@@ -131,7 +144,9 @@ class NormalizedAnnotation:
 
 
 def normalize_annotation(
-        annotation: Any | Literal[Singleton.MISSING]
+        annotation: Any | Literal[Singleton.MISSING],
+        *,
+        typevars: Mapping[TypeVar, Crossref]
         ) -> NormalizedAnnotation:
     """Given the annotation for a particular $thing, this extracts out
     any the type hint itself, any attached notes, config params, and
@@ -145,7 +160,7 @@ def normalize_annotation(
             annotateds=())
     if is_crossreffed(annotation):
         return NormalizedAnnotation(
-            typespec=TypeSpec.from_typehint(annotation),
+            typespec=TypeSpec.from_typehint(annotation, typevars=typevars),
             notes=(),
             config_params={},
             annotateds=())
@@ -176,7 +191,7 @@ def normalize_annotation(
                 LazyResolvingValue.from_annotated(annotated))
 
     return NormalizedAnnotation(
-        typespec=TypeSpec.from_typehint(type_),
+        typespec=TypeSpec.from_typehint(type_, typevars=typevars),
         notes=tuple(notes),
         config_params=config_params,
         annotateds=tuple(external_annotateds))
@@ -194,6 +209,19 @@ def normalize_module_dict(
         module, include_extras=True)
     dunder_all: set[str] = set(getattr(module, '__all__', ()))
     retval: dict[str, NormalizedObj] = {}
+
+    # First -- very first -- we need to collect any typevars from the module
+    # and make them available for normalized objects. We need to do this ahead
+    # of time because they all need to be available for any other members of
+    # the module (to deal with forward references).
+    # Note that we need to keep the typevars within the normalized result,
+    # because we need to preserve the crossref. It's up to the docs
+    # generation library to do anything with the typevar, so keeping
+    # it around is the only way to document things that use it
+    mutable_typevars: dict[TypeVar, Crossref] = {
+        obj: Crossref(module_name=module.__name__, toplevel_name=name)
+        for name, obj in module.__dict__.items()
+        if isinstance(obj, TypeVar)}
 
     # Note that, though rare, it's theoretically possible for values to appear
     # in a module's annotations but not its __dict__. (This is much more common
@@ -244,7 +272,8 @@ def normalize_module_dict(
                 config_params.update(decorated_config.as_nontotal_dict())
 
         raw_annotation = from_annotations.get(name, Singleton.MISSING)
-        normalized_obj_annotations = normalize_annotation(raw_annotation)
+        normalized_obj_annotations = normalize_annotation(
+            raw_annotation, typevars=mutable_typevars)
         config_params.update(normalized_obj_annotations.config_params)
 
         effective_config = DocnoteConfig(**config_params)
@@ -252,6 +281,16 @@ def normalize_module_dict(
             canonical_module = effective_config.canonical_module
         if effective_config.canonical_name is not None:
             canonical_name = effective_config.canonical_name
+
+        if (
+            isinstance(canonical_module, str)
+            and isinstance(canonical_name, str)
+        ):
+            obj_crossref = Crossref(
+                module_name=canonical_module,
+                toplevel_name=canonical_name)
+        else:
+            obj_crossref = None
 
         # All done. Filtering comes later; here we JUST want to do the
         # normalization!
@@ -261,6 +300,10 @@ def normalize_module_dict(
             effective_config=effective_config,
             notes=normalized_obj_annotations.notes,
             typespec=normalized_obj_annotations.typespec,
+            typevars=extend_typevars(
+                parent_crossref=obj_crossref,
+                parent_typevars=mutable_typevars,
+                obj=obj),
             canonical_module=canonical_module,
             canonical_name=canonical_name)
 
@@ -371,12 +414,46 @@ def _get_dunder_module_and_name(
         return obj.__module__, canonical_name
 
 
+def extend_typevars(
+        parent_crossref: Crossref | None,
+        parent_typevars: Mapping[TypeVar, Crossref],
+        obj: Any
+        ) -> Mapping[TypeVar, Crossref]:
+    """This creates a new typevars mapping that includes any new
+    typevars defined on the passed object. If it has none, it simply
+    creates a copy of the parent typevars.
+    """
+    typevars = {**parent_typevars}
+
+    raw_typevars = getattr(obj, '__type_params__', ())
+    if parent_crossref is None:
+        if raw_typevars:
+            logging.warning(
+                'Failed to extend typevars for %s due to missing parent '
+                + 'crossref!', obj)
+
+    else:
+        for typevar in raw_typevars:
+            typevars[typevar] = parent_crossref / SyntacticTraversal(
+                type_=SyntacticTraversalType.TYPEVAR,
+                key=typevar.__name__)
+
+    return typevars
+
+
 @dataclass(slots=True)
 class NormalizedObj:
     """This is a normalized representation of an object. It contains the
     (stubbed) runtime value of the object along with any annotateds
     (from ``Annotated``), as well as the unpacked-from-``Annotated``
     type itself.
+
+    TODO: we should at least consider moving crossref generation into
+    normalized objects, for actual directly-accessible object. The only
+    challenge is that there are documentable things that cannot be
+    reached during normalization (for example, parameters in function
+    signatures), which therefore can't get crossrefs that way. Also,
+    traversals could potentially be problematic.
     """
     obj_or_stub: Annotated[
             Any,
@@ -393,6 +470,10 @@ class NormalizedObj:
             TypeSpec | None,
             Note('''This is a normalized representation of the type that was
                 declared on the object.''')]
+    typevars: Annotated[
+            Mapping[TypeVar, Crossref],
+            Note('''This contains the cumulative collection of all typevars
+                (and their crossrefs) in the current and parent contexts.''')]
 
     # Where the value was declared. String if known (because it had a
     # __module__ or it had a docnote). None in some weird situations, like
@@ -457,8 +538,10 @@ class TypeSpec:
     def from_typehint(  # noqa: C901, PLR0912
             cls,
             typehint:
-                Crossreffed | type | TypeAliasType | UnionType | list | None,
+                Crossreffed | type | TypeVar | TypeAliasType | UnionType
+                | list | None,
             *,
+            typevars: Mapping[TypeVar, Crossref],
             _special_forms: _TypeSpecSpecialForms | None = None
             ) -> TypeSpec:
         """Converts an extracted type hint into a NormalizedType
@@ -479,20 +562,21 @@ class TypeSpec:
 
         elif isinstance(typehint, UnionType):
             normtype = NormalizedUnionType.from_typehint(
-                get_type_args(typehint))
+                get_type_args(typehint), typevars=typevars)
 
         elif isinstance(typehint, TypeAliasType):
             # Note that any type params here aren't relevant; they won't be
             # bound vars! They'll just be as-declared on the alias, which will
             # be documented (if needed) on the alias itself.
-            normtype = NormalizedConcreteType(Crossref.from_object(typehint))
+            normtype = NormalizedConcreteType(
+                Crossref.from_object(typehint, typevars=typevars))
 
         # This is the case in some special forms, like the argspec for
         # callables
         elif isinstance(typehint, list):
             normtype = NormalizedEmptyGenericType(
                 params=tuple(
-                    cls.from_typehint(generic_arg)
+                    cls.from_typehint(generic_arg, typevars=typevars)
                     for generic_arg in typehint))
 
         else:
@@ -509,11 +593,12 @@ class TypeSpec:
                 typehint = cast(type, typehint)
 
                 normtype = NormalizedConcreteType(
-                    Crossref.from_object(typehint))
+                    Crossref.from_object(typehint, typevars=typevars))
 
             # ---------------- Special-case generics
             elif origin is Literal:
-                normtype = NormalizedLiteralType.from_typehint(typehint)
+                normtype = NormalizedLiteralType.from_typehint(
+                    typehint, typevars=typevars)
 
             # THIS MIGHT STILL BE A UNION TYPE!
             # Things typed as ``Optional[...]`` will be converted behind
@@ -521,7 +606,7 @@ class TypeSpec:
             # well, a generic -- **but the origin will be a plain union!**
             elif origin is Union:
                 normtype = NormalizedUnionType.from_typehint(
-                        get_type_args(typehint))
+                        get_type_args(typehint), typevars=typevars)
 
             # Theoretically possible because Annotated doesn't always get
             # collapsed when nested in weird ways.
@@ -532,7 +617,8 @@ class TypeSpec:
                 # bypassing our usual special forms assignments
                 return cls.from_typehint(
                     typehint.__origin__,
-                    _special_forms=special_forms)
+                    _special_forms=special_forms,
+                    typevars=typevars)
 
             # We want to normalize the special forms into the root TypeSpec
             # for convenience; otherwise they make processing things difficult
@@ -548,14 +634,16 @@ class TypeSpec:
 
                 special_forms.update(update_special_forms)
                 return cls.from_typehint(
-                    type_args[0], _special_forms=special_forms)
+                    type_args[0],
+                    _special_forms=special_forms,
+                    typevars=typevars)
 
             # ----------------  (ahem...) Generic generics
             else:
                 normtype = NormalizedConcreteType(
-                    primary=Crossref.from_object(origin),
+                    primary=Crossref.from_object(origin, typevars=typevars),
                     params=tuple(
-                        cls.from_typehint(generic_arg)
+                        cls.from_typehint(generic_arg, typevars=typevars)
                         for generic_arg in get_type_args(typehint)))
 
         return cls(normtype, **special_forms)
@@ -573,7 +661,9 @@ class NormalizedUnionType:
     def from_typehint(
             cls,
             typehint: tuple[
-                Crossreffed | type | TypeAliasType | UnionType | list, ...]
+                Crossreffed | type | TypeAliasType | UnionType | list, ...],
+            *,
+            typevars: Mapping[TypeVar, Crossref]
             ) -> NormalizedUnionType:
         norm_types = set()
 
@@ -584,7 +674,10 @@ class NormalizedUnionType:
             # since it wouldn't be a valid declaration, but we want to be
             # resilient against that (because it's trivial to do so; we just
             # don't pass in the _special_forms argument!)
-            norm_types.add(TypeSpec.from_typehint(union_member).normtype)
+            norm_types.add(
+                TypeSpec.from_typehint(
+                    union_member, typevars=typevars
+                ).normtype)
 
         return cls(frozenset(norm_types))
 
@@ -653,7 +746,9 @@ class NormalizedLiteralType:
     @classmethod
     def from_typehint(
             cls,
-            typehint: Any
+            typehint: Any,
+            *,
+            typevars: Mapping[TypeVar, Crossref]
             ) -> NormalizedLiteralType:
         values: set[int | bool | str | bytes | Crossref] = set()
 
@@ -667,7 +762,7 @@ class NormalizedLiteralType:
             # Note: this must be a enum object! (and a live one, not a
             # crossref -- hence needing to convert it)
             elif isinstance(type_arg, Enum):
-                values.add(Crossref.from_object(type_arg))
+                values.add(Crossref.from_object(type_arg, typevars=typevars))
 
             else:
                 raise TypeError('Invalid type for literal arg!', typehint)

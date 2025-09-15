@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import inspect
+import itertools
 import typing
 from collections.abc import Iterator
 from collections.abc import Sequence
@@ -10,6 +11,7 @@ from enum import Enum
 from typing import Annotated
 from typing import Any
 from typing import Protocol
+from typing import TypeVar
 
 from docnote import DocnoteGroup
 from docnote import MarkupLang
@@ -20,6 +22,8 @@ from docnote_extract.crossrefs import CrossrefTraversal
 from docnote_extract.crossrefs import GetattrTraversal
 from docnote_extract.crossrefs import ParamTraversal
 from docnote_extract.crossrefs import SignatureTraversal
+from docnote_extract.crossrefs import SyntacticTraversal
+from docnote_extract.crossrefs import SyntacticTraversalType
 from docnote_extract.crossrefs import is_crossreffed
 
 if typing.TYPE_CHECKING:
@@ -60,6 +64,7 @@ class ObjClassification:
     is_getset_descriptor: bool
     is_member_descriptor: bool
     is_callable: bool
+    is_typevar: bool
 
     @property
     def is_any_generator(self) -> bool:
@@ -104,9 +109,10 @@ class ObjClassification:
             is_data_descriptor=inspect.isdatadescriptor(obj),
             is_getset_descriptor=inspect.isgetsetdescriptor(obj),
             is_member_descriptor=inspect.ismemberdescriptor(obj),
-            is_callable=callable(obj))
+            is_callable=callable(obj),
+            is_typevar=isinstance(obj, TypeVar))
 
-    def get_summary_class(self) -> type[SummaryBase]:
+    def get_summary_class(self) -> type[SummaryBase]:  # noqa: PLR0911
         """Given the current classification, returns which summary
         type should be applied to the object, so that the caller can
         then create a summary instance for it.
@@ -131,6 +137,8 @@ class ObjClassification:
             or (self.is_method_descriptor and self.is_callable)
         ):
             return CallableSummary
+        if self.is_typevar:
+            return TypeVarSummary
 
         return VariableSummary
 
@@ -359,13 +367,18 @@ class ModuleSummary[T: SummaryMetadataProtocol](SummaryBase[T]):
     dunder_all: frozenset[str] | None
     docstring: DocText | None
     members: frozenset[NamespaceMemberSummary[T]]
+    typevars: frozenset[TypeVarSummary[T]]
 
     _member_lookup: \
-        dict[CrossrefTraversal, NamespaceMemberSummary[T]] = field(
+        dict[
+                CrossrefTraversal,
+                NamespaceMemberSummary[T] | TypeVarSummary[T]] = field(
             default_factory=dict, repr=False, init=False, compare=False)
 
     def __post_init__(self):
-        for member in self.members:
+        # Note that module-level typevars don't use the syntactic traversal,
+        # because they can't be defined as sugared typevars
+        for member in itertools.chain(self.members, self.typevars):
             self._member_lookup[GetattrTraversal(member.name)] = member
 
     def traverse(self, traversal: CrossrefTraversal) -> SummaryBase[T]:
@@ -413,6 +426,28 @@ class CrossrefSummary[T: SummaryMetadataProtocol](SummaryBase[T]):
 
 
 @dataclass(slots=True, frozen=True, kw_only=True)
+class TypeVarSummary[T: SummaryMetadataProtocol](SummaryBase[T]):
+    """Type var summaries attach to things that can declare type
+    variables -- signatures, classes, and modules -- and contain all
+    applicable information for the underlying type var. They can then
+    be referenced via crossref from the sites that use them.
+    """
+    name: str
+    bound: TypeSpec | None
+    constraints: tuple[TypeSpec, ...]
+    # Note: because this is wrapped in a typespec, we don't need to worry
+    # about a default of none. Explicit defaults of None will still be wrapped.
+    default: TypeSpec | None
+
+    def traverse(self, traversal: CrossrefTraversal) -> SummaryBase[T]:
+        raise LookupError(
+            'TypeVar summaries have no traversals', self, traversal)
+
+    def flatten(self) -> Iterator[SummaryBase[T]]:
+        yield self
+
+
+@dataclass(slots=True, frozen=True, kw_only=True)
 class VariableSummary[T: SummaryMetadataProtocol](SummaryBase[T]):
     """VariableSummary instances are used for module variables as well as
     class members. Note that within a class, variables annotated as
@@ -451,16 +486,30 @@ class ClassSummary[T: SummaryMetadataProtocol](SummaryBase[T]):
             classes will not be detected.''')]
     bases: tuple[TypeSpec, ...]
     members: frozenset[NamespaceMemberSummary[T]]
+    typevars: frozenset[TypeVarSummary[T]]
 
     _member_lookup: \
         dict[CrossrefTraversal, NamespaceMemberSummary[T]] = field(
             default_factory=dict, repr=False, init=False, compare=False)
+    _syntactic_lookup: dict[SyntacticTraversal, TypeVarSummary[T]] = field(
+        default_factory=dict, repr=False, init=False, compare=False)
 
     def __post_init__(self):
         for member in self.members:
             self._member_lookup[GetattrTraversal(member.name)] = member
 
+        for typevar in self.typevars:
+            self._syntactic_lookup[
+                SyntacticTraversal(
+                    type_=SyntacticTraversalType.TYPEVAR,
+                    key=typevar.name)
+            ] = typevar
+
     def traverse(self, traversal: CrossrefTraversal) -> SummaryBase[T]:
+        # KeyError is a LookupError subclass, so this is fine.
+        if isinstance(traversal, SyntacticTraversal):
+            return self._syntactic_lookup[traversal]
+
         # KeyError is a LookupError subclass, so this is fine.
         return self._member_lookup[traversal]
 
@@ -557,15 +606,29 @@ class SignatureSummary[T: SummaryMetadataProtocol](SummaryBase[T]):
                 ++  The overloads themselves have docstrings
                 Note that in this case, the docstring for the implementation
                 will be included in the parent callable.''')]
+    typevars: frozenset[TypeVarSummary[T]]
 
     _member_lookup: dict[ParamTraversal, ParamSummary[T]] = field(
+        default_factory=dict, repr=False, init=False, compare=False)
+    _syntactic_lookup: dict[SyntacticTraversal, TypeVarSummary[T]] = field(
         default_factory=dict, repr=False, init=False, compare=False)
 
     def __post_init__(self):
         for member in self.params:
             self._member_lookup[ParamTraversal(member.name)] = member
 
+        for typevar in self.typevars:
+            self._syntactic_lookup[
+                SyntacticTraversal(
+                    type_=SyntacticTraversalType.TYPEVAR,
+                    key=typevar.name)
+            ] = typevar
+
     def traverse(self, traversal: CrossrefTraversal) -> SummaryBase[T]:
+        # KeyError is a LookupError subclass, so this is fine.
+        if isinstance(traversal, SyntacticTraversal):
+            return self._syntactic_lookup[traversal]
+
         if not isinstance(traversal, ParamTraversal):
             raise LookupError(
                 'Traversals for signatures must be ``ParamTraversal`` '
