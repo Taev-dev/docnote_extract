@@ -8,7 +8,7 @@
 #            pkg_name='finnr',
 #            offset_dest_root_dir='taevcode',
 #            root_path='src_py/finnr',
-#            commit_hash='5a58ed0fc95b068ae396ce3adea91ca66cabe169',
+#            commit_hash='17cf5230f6f24f968aebe07cb92072ccaa9f0eda',
 #            license_paths=set())
 
 # The license of the original project is included in the top level of
@@ -18,25 +18,30 @@
 # command is:
 # ``uv run python -m docnote_extract_testpkg_factory``.
 
-"""THIS MODULE IS 100% AUTOMATICALLY GENERATED VIA THE CODEGEN SIDECAR
-(See sidecars_py).
-Do not modify it directly.
-Some notes:
-++  We want to strictly separate the codegen from any custom
-    implementation as part of the ``Money`` object, so this module
-    contains ONLY money math.
-++  The circular injection of ``Money`` is simply the most performant
-    way to access the Money object.
-++  Note that decimal doesn't implement augmented operations; therefore,
-    we have to be careful to reference the non-augmented methods within
-    the template
-++  There are some things that are marked as overloads that could have
-    been converted into a separate template for unions, since they
-    aren't actually overloads (eg ``__mod__``), but rather,
-    ``other: _Scalar | Money -> Money``. These used to be actual
-    overloads, but I changed them when I realized they didn't make any
-    sense like that. Might be worth cleaning them up later, but for now,
-    it's not hurting anything.
+"""This module contains the implementation for math on ``Money``
+objects. It is not indented to be used directly, and is instead used as
+a mixin on the ``Money`` class.
+> Implementation notes
+__style_modifiers__: 'ccw/nodisplay'
+    THIS MODULE IS 100% AUTOMATICALLY GENERATED VIA THE CODEGEN SIDECAR
+    (See sidecars_py).
+    Do not modify it directly.
+    Some notes:
+    ++  We want to strictly separate the codegen from any custom
+        implementation as part of the ``Money`` object, so this module
+        contains ONLY money math.
+    ++  The circular injection of ``Money`` is simply the most performant
+        way to access the Money object.
+    ++  Note that decimal doesn't implement augmented operations; therefore,
+        we have to be careful to reference the non-augmented methods within
+        the template
+    ++  There are some things that are marked as overloads that could have
+        been converted into a separate template for unions, since they
+        aren't actually overloads (eg ``__mod__``), but rather,
+        ``other: _Scalar | Money -> Money``. These used to be actual
+        overloads, but I changed them when I realized they didn't make any
+        sense like that. Might be worth cleaning them up later, but for now,
+        it's not hurting anything.
 """
 from __future__ import annotations
 import typing

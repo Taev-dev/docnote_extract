@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import Enum
 from types import ModuleType
@@ -9,9 +10,23 @@ from typing import ClassVar
 from typing import Protocol
 from typing import TypeAliasType
 from typing import TypeGuard
+from typing import TypeVar
 from typing import overload
 
 from docnote import Note
+
+
+class SyntacticTraversalType(Enum):
+    TYPEVAR = 'typevar'
+    ANONYMOUS_OVERLOAD = 'overload'
+
+
+@dataclass(slots=True, frozen=True)
+class SyntacticTraversal:
+    """
+    """
+    type_: SyntacticTraversalType
+    key: str
 
 
 @dataclass(slots=True, frozen=True)
@@ -56,7 +71,8 @@ class ParamTraversal:
 
 
 type CrossrefTraversal = (
-    GetattrTraversal
+    SyntacticTraversal
+    | GetattrTraversal
     | CallTraversal
     | GetitemTraversal
     | SignatureTraversal
@@ -108,7 +124,12 @@ class Crossref:
                 traversals=(*self.traversals, traversal))
 
     @classmethod
-    def from_object(cls, obj: Any) -> Crossref:
+    def from_object(
+            cls,
+            obj: Any,
+            *,
+            typevars: Mapping[TypeVar, Crossref]
+            ) -> Crossref:
         """Attempts to create a crossref from the passed object. This
         can only work conditionally; generally only types, functions,
         and enums will succeed.
@@ -133,6 +154,14 @@ class Crossref:
                 module_name=obj.__name__,
                 toplevel_name=None,
                 traversals=())
+
+        if isinstance(obj, TypeVar):
+            if obj in typevars:
+                return typevars[obj]
+            else:
+                raise ValueError(
+                    'Cannot create a typespec for an unknown type variable!',
+                    obj)
 
         if (
             hasattr(obj, '__module__')

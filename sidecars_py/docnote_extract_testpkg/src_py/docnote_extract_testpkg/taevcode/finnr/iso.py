@@ -8,7 +8,7 @@
 #            pkg_name='finnr',
 #            offset_dest_root_dir='taevcode',
 #            root_path='src_py/finnr',
-#            commit_hash='5a58ed0fc95b068ae396ce3adea91ca66cabe169',
+#            commit_hash='17cf5230f6f24f968aebe07cb92072ccaa9f0eda',
 #            license_paths=set())
 
 # The license of the original project is included in the top level of
@@ -18,15 +18,23 @@
 # command is:
 # ``uv run python -m docnote_extract_testpkg_factory``.
 
-"""THIS MODULE IS 100% AUTOMATICALLY GENERATED VIA THE CODEGEN SIDECAR
-(See sidecars_py).
-Do not modify it directly.
+"""This module contains the ISO-4271 currency database in code form.
+> Implementation notes
+__style_modifiers__: 'ccw/nodisplay'
+    THIS MODULE IS 100% AUTOMATICALLY GENERATED VIA THE CODEGEN SIDECAR
+    (See sidecars_py).
+    Do not modify it directly.
 """
 from datetime import date
+from typing import Annotated
+from docnote import Note
 from finnr._types import Singleton
 from finnr.currency import Currency
 from finnr.currency import CurrencySet
-mint = CurrencySet({
+mint: Annotated[
+    CurrencySet,
+    Note('The ISO-4217 currency database.')
+] = CurrencySet({
     Currency(
         code_alpha3='ADP',
         code_num=20,

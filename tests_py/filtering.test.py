@@ -45,7 +45,8 @@ class TestFilterModuleSummaries:
                 name='_foo',
                 dunder_all=None,
                 docstring=None,
-                members=frozenset()))
+                members=frozenset(),
+                typevars=frozenset()))
 
         assert not hasattr(target_metadata, 'to_document')
         assert summary_root.to_document is None
@@ -98,7 +99,8 @@ class TestFilterModuleSummaries:
                         name='foo.bar.baz',
                         dunder_all=None,
                         docstring=None,
-                        members=frozenset()),)},
+                        members=frozenset(),
+                        typevars=frozenset()),)},
                 module_summary=ModuleSummary(
                     crossref=None,
                     ordering_index=None,
@@ -108,7 +110,8 @@ class TestFilterModuleSummaries:
                     name='foo.bar',
                     dunder_all=None,
                     docstring=None,
-                    members=frozenset()),)},
+                    members=frozenset(),
+                    typevars=frozenset()),)},
             module_summary=ModuleSummary(
                 crossref=None,
                 ordering_index=None,
@@ -118,7 +121,8 @@ class TestFilterModuleSummaries:
                 name='foo',
                 dunder_all=None,
                 docstring=None,
-                members=frozenset()))
+                members=frozenset(),
+                typevars=frozenset()))
 
         assert summary_root.to_document is None
         assert not hasattr(foo_metadata, 'to_document')
@@ -173,7 +177,8 @@ class TestFilterModuleSummaries:
                         name='foo.bar._baz',
                         dunder_all=None,
                         docstring=None,
-                        members=frozenset()),)},
+                        members=frozenset(),
+                        typevars=frozenset()),)},
                 module_summary=ModuleSummary(
                     crossref=None,
                     ordering_index=None,
@@ -183,7 +188,8 @@ class TestFilterModuleSummaries:
                     name='foo.bar',
                     dunder_all=None,
                     docstring=None,
-                    members=frozenset()),)},
+                    members=frozenset(),
+                    typevars=frozenset()),)},
             module_summary=ModuleSummary(
                 crossref=None,
                 ordering_index=None,
@@ -193,7 +199,8 @@ class TestFilterModuleSummaries:
                 name='foo',
                 dunder_all=None,
                 docstring=None,
-                members=frozenset()))
+                members=frozenset(),
+                typevars=frozenset()))
 
         filter_module_summaries(summary_root, configured_root)
 
@@ -240,7 +247,8 @@ class TestFilterModuleSummaries:
                         name='foo._bar.baz',
                         dunder_all=None,
                         docstring=None,
-                        members=frozenset()),)},
+                        members=frozenset(),
+                        typevars=frozenset()),)},
                 module_summary=ModuleSummary(
                     crossref=None,
                     ordering_index=None,
@@ -250,7 +258,8 @@ class TestFilterModuleSummaries:
                     name='foo._bar',
                     dunder_all=None,
                     docstring=None,
-                    members=frozenset()),)},
+                    members=frozenset(),
+                    typevars=frozenset()),)},
             module_summary=ModuleSummary(
                 crossref=None,
                 ordering_index=None,
@@ -260,7 +269,8 @@ class TestFilterModuleSummaries:
                 name='foo',
                 dunder_all=None,
                 docstring=None,
-                members=frozenset()))
+                members=frozenset(),
+                typevars=frozenset()))
 
         filter_module_summaries(summary_root, configured_root)
 
@@ -308,7 +318,8 @@ class TestFilterModuleSummaries:
                         name='foo._bar.baz',
                         dunder_all=None,
                         docstring=None,
-                        members=frozenset()),)},
+                        members=frozenset(),
+                        typevars=frozenset()),)},
                 module_summary=ModuleSummary(
                     crossref=None,
                     ordering_index=None,
@@ -318,7 +329,8 @@ class TestFilterModuleSummaries:
                     name='foo._bar',
                     dunder_all=None,
                     docstring=None,
-                    members=frozenset()),)},
+                    members=frozenset(),
+                    typevars=frozenset()),)},
             module_summary=ModuleSummary(
                 crossref=None,
                 ordering_index=None,
@@ -328,7 +340,8 @@ class TestFilterModuleSummaries:
                 name='foo',
                 dunder_all=None,
                 docstring=None,
-                members=frozenset()))
+                members=frozenset(),
+                typevars=frozenset()))
 
         filter_module_summaries(summary_root, configured_root)
 
@@ -376,7 +389,8 @@ class TestFilterModuleSummaries:
                         name='foo.bar.baz',
                         dunder_all=None,
                         docstring=None,
-                        members=frozenset()),)},
+                        members=frozenset(),
+                        typevars=frozenset()),)},
                 module_summary=ModuleSummary(
                     crossref=None,
                     ordering_index=None,
@@ -386,7 +400,8 @@ class TestFilterModuleSummaries:
                     name='foo.bar',
                     dunder_all=None,
                     docstring=None,
-                    members=frozenset()),)},
+                    members=frozenset(),
+                    typevars=frozenset()),)},
             module_summary=ModuleSummary(
                 crossref=None,
                 ordering_index=None,
@@ -396,7 +411,8 @@ class TestFilterModuleSummaries:
                 name='foo',
                 dunder_all=None,
                 docstring=None,
-                members=frozenset()))
+                members=frozenset(),
+                typevars=frozenset()))
 
         filter_module_summaries(summary_root, configured_root)
 
@@ -436,7 +452,8 @@ class TestFilterModuleSummaries:
                     ordering_index=None,
                     child_groups=(),
                     parent_group_name=None,
-                    metadata=foobar_metadata)})))
+                    metadata=foobar_metadata)}),
+                typevars=frozenset()))
 
         filter_module_summaries(summary_root, configured_root)
 
@@ -484,7 +501,9 @@ class TestFilterCanonicalOwnership:
                         ordering_index=None,
                         child_groups=(),
                         parent_group_name=None,
-                        metadata=foobarbaz_metadata)}))}))
+                        metadata=foobarbaz_metadata)}),
+                    typevars=frozenset())}),
+                typevars=frozenset())
 
         assert not hasattr(foo_metadata, 'disowned')
         assert not hasattr(foobar_metadata, 'disowned')
@@ -521,7 +540,8 @@ class TestFilterCanonicalOwnership:
                     ordering_index=None,
                     child_groups=(),
                     parent_group_name=None,
-                    metadata=foobar_metadata)}))
+                    metadata=foobar_metadata)}),
+                typevars=frozenset())
 
         filter_canonical_ownership(summary)
 
@@ -553,7 +573,8 @@ class TestFilterCanonicalOwnership:
                     ordering_index=None,
                     child_groups=(),
                     parent_group_name=None,
-                    metadata=foobar_metadata)}))
+                    metadata=foobar_metadata)}),
+                typevars=frozenset())
 
         filter_canonical_ownership(summary)
 
@@ -585,7 +606,8 @@ class TestFilterCanonicalOwnership:
                     ordering_index=None,
                     child_groups=(),
                     parent_group_name=None,
-                    metadata=foobar_metadata)}))
+                    metadata=foobar_metadata)}),
+                typevars=frozenset())
 
         filter_canonical_ownership(summary)
 
@@ -618,7 +640,8 @@ class TestFilterCanonicalOwnership:
                     ordering_index=None,
                     child_groups=(),
                     parent_group_name=None,
-                    metadata=foobar_metadata)}))
+                    metadata=foobar_metadata)}),
+                typevars=frozenset())
 
         filter_canonical_ownership(summary)
 
@@ -669,7 +692,9 @@ class TestFilterPrivateSummaries:
                         ordering_index=None,
                         child_groups=(),
                         parent_group_name=None,
-                        metadata=foobarbaz_metadata)}))}))
+                        metadata=foobarbaz_metadata)}),
+                    typevars=frozenset())}),
+                typevars=frozenset())
 
         assert not hasattr(foo_metadata, 'to_document')
         assert not hasattr(foobar_metadata, 'to_document')
@@ -721,7 +746,8 @@ class TestFilterPrivateSummaries:
                         ordering_index=None,
                         child_groups=(),
                         parent_group_name=None,
-                        metadata=foorab_metadata)}))
+                        metadata=foorab_metadata)}),
+                typevars=frozenset())
 
         filter_private_summaries(summary)
 
@@ -769,7 +795,8 @@ class TestFilterPrivateSummaries:
                         ordering_index=None,
                         child_groups=(),
                         parent_group_name=None,
-                        metadata=foorab_metadata)}))
+                        metadata=foorab_metadata)}),
+                typevars=frozenset())
 
         filter_private_summaries(summary)
 
@@ -817,7 +844,8 @@ class TestFilterPrivateSummaries:
                         ordering_index=None,
                         child_groups=(),
                         parent_group_name=None,
-                        metadata=foorab_metadata)}))
+                        metadata=foorab_metadata)}),
+                typevars=frozenset())
 
         filter_private_summaries(summary)
 
@@ -870,7 +898,8 @@ class TestFilterPrivateSummaries:
                         ordering_index=None,
                         child_groups=(),
                         parent_group_name=None,
-                        metadata=foobar_metadata)}))
+                        metadata=foobar_metadata)}),
+                typevars=frozenset())
 
         filter_private_summaries(summary)
 
@@ -936,7 +965,8 @@ class TestFilterPrivateSummaries:
                         ordering_index=None,
                         child_groups=(),
                         parent_group_name=None,
-                        metadata=fooinit_metadata)}))
+                        metadata=fooinit_metadata)}),
+                typevars=frozenset())
 
         filter_private_summaries(summary)
 

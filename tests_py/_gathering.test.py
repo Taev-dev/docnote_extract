@@ -40,7 +40,8 @@ class TestDocnotes:
                             ordering_index=None,
                             child_groups=(),
                             parent_group_name=None,
-                            metadata=SummaryMetadata())})))})
+                            metadata=SummaryMetadata())}),
+                    typevars=frozenset()))})
 
         assert docnotes.is_stdlib(Crossref(
             module_name='typing',
@@ -83,7 +84,8 @@ class TestDocnotes:
                             ordering_index=None,
                             child_groups=(),
                             parent_group_name=None,
-                            metadata=SummaryMetadata())})))})
+                            metadata=SummaryMetadata())}),
+                    typevars=frozenset()))})
 
         assert not docnotes.is_firstparty(Crossref(
             module_name='bar',
@@ -127,7 +129,8 @@ class TestDocnotes:
                     metadata=SummaryMetadata(),
                     dunder_all=None,
                     docstring=None,
-                    members=frozenset({var_summary})))})
+                    members=frozenset({var_summary}),
+                    typevars=frozenset()))})
 
         # Just to get type checking to work
         assert var_summary.crossref is not None

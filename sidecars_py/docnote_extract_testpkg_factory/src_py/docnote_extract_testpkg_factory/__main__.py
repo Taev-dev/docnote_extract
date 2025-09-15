@@ -533,7 +533,7 @@ SOURCES: list[PkgSrcSpec] = [
         # Note: we're only offsetting these so we can play around with
         # nesting configs
         offset_dest_root_dir='taevcode',
-        commit_hash='5a58ed0fc95b068ae396ce3adea91ca66cabe169',
+        commit_hash='17cf5230f6f24f968aebe07cb92072ccaa9f0eda',
         license_paths=set()),
     # This is a biiiiig repo, I don't think we want to use it
     # PkgSrcSpec(

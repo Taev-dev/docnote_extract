@@ -4,6 +4,7 @@ from typing import Any
 from typing import ClassVar
 from typing import Literal
 from typing import Optional
+from typing import TypeVar
 from typing import Union
 from typing import cast
 from typing import get_type_hints
@@ -14,6 +15,9 @@ from docnote import Note
 from docnote_extract._extraction import ModulePostExtraction
 from docnote_extract._module_tree import ConfiguredModuleTreeNode
 from docnote_extract.crossrefs import Crossref
+from docnote_extract.crossrefs import GetattrTraversal
+from docnote_extract.crossrefs import SyntacticTraversal
+from docnote_extract.crossrefs import SyntacticTraversalType
 from docnote_extract.normalization import NormalizedConcreteType
 from docnote_extract.normalization import NormalizedEmptyGenericType
 from docnote_extract.normalization import NormalizedLiteralType
@@ -60,9 +64,14 @@ class TestNormalizeNamespaceItem:
 
         result = normalize_namespace_item(
             'func_with_config',
+            crossref=Crossref(
+                module_name='docnote_extract_testpkg._hand_rolled.noteworthy',
+                toplevel_name='ClassWithDecoratedConfigMethod',
+                traversals=(GetattrTraversal('func_with_config'),)),
             value=ClassWithDecoratedConfigMethod.func_with_config,
             parent_annotations=get_type_hints(ClassWithDecoratedConfigMethod),
-            parent_effective_config=parent_obj.effective_config)
+            parent_effective_config=parent_obj.effective_config,
+            parent_typevars={})
 
         assert not result.annotateds
         assert result.typespec is None
@@ -97,9 +106,15 @@ class TestNormalizeNamespaceItem:
 
         result = normalize_namespace_item(
             'func_with_canonical_overrides',
+            crossref=Crossref(
+                module_name='docnote_extract_testpkg._hand_rolled.noteworthy',
+                toplevel_name='ClassWithDecoratedConfigMethod',
+                traversals=(
+                    GetattrTraversal('func_with_canonical_overrides'),)),
             value=ClassWithDecoratedConfigMethod.func_with_canonical_overrides,
             parent_annotations=get_type_hints(ClassWithDecoratedConfigMethod),
-            parent_effective_config=parent_obj.effective_config)
+            parent_effective_config=parent_obj.effective_config,
+            parent_typevars={})
 
         assert result.canonical_module == 'foo.bar'
         assert result.canonical_name == 'baz'
@@ -187,7 +202,8 @@ class TestNormalizeModuleMembers:
         assert 'bare_annotation' in normalized
         norm_bare_anno = normalized['bare_annotation']
         assert not norm_bare_anno.annotateds
-        assert norm_bare_anno.typespec == TypeSpec.from_typehint(str)
+        assert norm_bare_anno.typespec == TypeSpec.from_typehint(
+            str, typevars={})
         assert norm_bare_anno.canonical_module == \
             'docnote_extract_testpkg._hand_rolled'
         assert norm_bare_anno.canonical_name == 'bare_annotation'
@@ -220,7 +236,7 @@ class TestNormalizeModuleMembers:
         norm_cfg_attr = normalized['DOCNOTE_CONFIG_ATTR']
         assert not norm_cfg_attr.annotateds
         assert norm_cfg_attr.typespec == TypeSpec.from_typehint(
-            str)
+            str, typevars={})
         assert len(norm_cfg_attr.notes) == 1
         note, = norm_cfg_attr.notes
         assert note.value.startswith('Docs generation libraries should use ')
@@ -254,7 +270,7 @@ class TestNormalizeModuleMembers:
         clcnote_attr = normalized['ClcNote']
         assert not clcnote_attr.annotateds
         assert clcnote_attr.typespec == TypeSpec.from_typehint(
-            Callable[[str], Note])  # type: ignore
+            Callable[[str], Note], typevars={})  # type: ignore
         assert not clcnote_attr.notes
         assert clcnote_attr.effective_config == DocnoteConfig(
             include_in_docs=False)
@@ -288,7 +304,7 @@ class TestNormalizeModuleMembers:
         clcnote_attr = normalized['ClcNote']
         assert not clcnote_attr.annotateds
         assert clcnote_attr.typespec == TypeSpec.from_typehint(
-            Callable[[str], Note])  # type: ignore
+            Callable[[str], Note], typevars={})  # type: ignore
         assert not clcnote_attr.notes
         assert clcnote_attr.effective_config == DocnoteConfig(
             include_in_docs=False,
@@ -366,7 +382,7 @@ class TestTypeSpec:
         """TypeSpec.from_typehint with a stdlib plain (non-generic) type
         as the typehint must return a result with all normalized types.
         """
-        result = TypeSpec.from_typehint(int)
+        result = TypeSpec.from_typehint(int, typevars={})
 
         assert isinstance(result, TypeSpec)
         assert isinstance(result.normtype, NormalizedConcreteType)
@@ -377,7 +393,7 @@ class TestTypeSpec:
         """TypeSpec.from_typehint with a stdlib generic collection type
         as the typehint must return a result with all normalized types.
         """
-        result = TypeSpec.from_typehint(frozenset[int])
+        result = TypeSpec.from_typehint(frozenset[int], typevars={})
 
         assert isinstance(result, TypeSpec)
         assert isinstance(result.normtype, NormalizedConcreteType)
@@ -393,7 +409,7 @@ class TestTypeSpec:
         """TypeSpec.from_typehint with an Optional[...] type
         as the typehint must return a correct result.
         """
-        result = TypeSpec.from_typehint(Optional[int])
+        result = TypeSpec.from_typehint(Optional[int], typevars={})
 
         assert isinstance(result, TypeSpec)
         assert isinstance(result.normtype, NormalizedUnionType)
@@ -409,7 +425,7 @@ class TestTypeSpec:
         """TypeSpec.from_typehint with a ``pipe | union`` type
         as the typehint must return a correct result.
         """
-        result = TypeSpec.from_typehint(int | bool)
+        result = TypeSpec.from_typehint(int | bool, typevars={})
 
         assert isinstance(result, TypeSpec)
         assert isinstance(result.normtype, NormalizedUnionType)
@@ -427,7 +443,7 @@ class TestTypeSpec:
         """TypeSpec.from_typehint with an explicit ``Union[...]`` type
         as the typehint must return a correct result.
         """
-        result = TypeSpec.from_typehint(Union[int, bool])
+        result = TypeSpec.from_typehint(Union[int, bool], typevars={})
 
         assert isinstance(result, TypeSpec)
         assert isinstance(result.normtype, NormalizedUnionType)
@@ -445,7 +461,7 @@ class TestTypeSpec:
         """TypeSpec.from_typehint with the colloquial type of ``None``
         as the typehint must return a correct result.
         """
-        result = TypeSpec.from_typehint(None)
+        result = TypeSpec.from_typehint(None, typevars={})
 
         assert isinstance(result, TypeSpec)
         assert result.normtype is NormalizedSpecialType.NONE
@@ -454,7 +470,7 @@ class TestTypeSpec:
         """TypeSpec.from_typehint with an ``Any`` type
         as the typehint must return a correct result.
         """
-        result = TypeSpec.from_typehint(Any)  # type: ignore
+        result = TypeSpec.from_typehint(Any, typevars={})  # type: ignore
 
         assert isinstance(result, TypeSpec)
         assert result.normtype is NormalizedSpecialType.ANY
@@ -463,7 +479,7 @@ class TestTypeSpec:
         """TypeSpec.from_typehint with a ``ClassVar`` type
         as the typehint must return a correct result.
         """
-        result = TypeSpec.from_typehint(ClassVar[int])
+        result = TypeSpec.from_typehint(ClassVar[int], typevars={})
 
         assert isinstance(result, TypeSpec)
         assert result.normtype == NormalizedConcreteType(
@@ -475,7 +491,7 @@ class TestTypeSpec:
         """TypeSpec.from_typehint with a ``Literal`` type
         as the typehint must return a correct result.
         """
-        result = TypeSpec.from_typehint(Literal[True])  # type: ignore
+        result = TypeSpec.from_typehint(Literal[True], typevars={})  # type: ignore
 
         assert isinstance(result, TypeSpec)
         assert result.normtype == NormalizedLiteralType(
@@ -485,7 +501,7 @@ class TestTypeSpec:
         """TypeSpec.from_typehint with a ``Callable`` type
         as the typehint must return a correct result.
         """
-        result = TypeSpec.from_typehint(Callable[[int], bool])  # type: ignore
+        result = TypeSpec.from_typehint(Callable[[int], bool], typevars={})  # type: ignore
 
         assert isinstance(result, TypeSpec)
         assert result.normtype == NormalizedConcreteType(
@@ -497,3 +513,71 @@ class TestTypeSpec:
                         module_name='builtins', toplevel_name='int'))),),)),
                 TypeSpec(NormalizedConcreteType(primary=Crossref(
                     module_name='builtins', toplevel_name='bool')))))
+
+    def test_from_typevar_mod(self):
+        """TypeSpec.from_typehint with module-level ``TypeVar`` instance
+        as the typehint must return a correct result.
+        """
+        result = TypeSpec.from_typehint(
+            _ModTypeVar, typevars={
+                _ModTypeVar: Crossref(
+                    module_name='foo',
+                    toplevel_name='_ModTypeVar')})
+
+        assert isinstance(result, TypeSpec)
+        assert result.normtype == NormalizedConcreteType(
+            primary=Crossref(
+                module_name='foo', toplevel_name='_ModTypeVar'),)
+
+    def test_from_typevar_sugared[T](self):
+        """TypeSpec.from_typehint with syntactic-sugared type vars
+        must return a correct result.
+        """
+        result = TypeSpec.from_typehint(
+            T, typevars={
+                T: Crossref(  # type: ignore
+                    module_name='foo',
+                    toplevel_name='bar',
+                    traversals=(
+                        SyntacticTraversal(
+                            type_=SyntacticTraversalType.TYPEVAR,
+                            key='T'),))})
+
+        assert isinstance(result, TypeSpec)
+        print(result.normtype)
+        assert result.normtype == NormalizedConcreteType(
+            primary=Crossref(
+                module_name='foo',
+                toplevel_name='bar',
+                traversals=(
+                    SyntacticTraversal(
+                        type_=SyntacticTraversalType.TYPEVAR,
+                        key='T'),)),
+            params=())
+
+    def test_from_aliased_generic(self):
+        """TypeSpec.from_typehint with module-level generic type alias
+        must return a correct result.
+        """
+        result = TypeSpec.from_typehint(
+            AliasedGeneric[int], typevars={  # type: ignore
+                AliasedGeneric.__type_params__[0]: Crossref(  # type: ignore
+                    module_name='foo',
+                    toplevel_name='AliasedGeneric',
+                    traversals=(
+                        SyntacticTraversal(
+                            type_=SyntacticTraversalType.TYPEVAR,
+                            key='T'),))})
+
+        assert isinstance(result, TypeSpec)
+        print(result.normtype)
+        assert result.normtype == NormalizedConcreteType(
+            primary=Crossref(
+                module_name='tests_py.normalization_test',
+                toplevel_name='AliasedGeneric'),
+            params=(TypeSpec(NormalizedConcreteType(primary=Crossref(
+                        module_name='builtins', toplevel_name='int'))),))
+
+
+_ModTypeVar = TypeVar('_ModTypeVar')
+type AliasedGeneric[T] = list[T]
